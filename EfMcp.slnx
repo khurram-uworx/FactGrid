@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/EfMcp.AspNet/EfMcp.AspNet.csproj" />
+  <Project Path="tests/EfMcp.Tests/EfMcp.Tests.csproj" />
+</Solution>
