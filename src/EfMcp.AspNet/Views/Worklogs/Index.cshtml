@@ -1,0 +1,46 @@
+@model int
+@{
+    ViewData["Title"] = "Worklogs";
+}
+
+<h1>Worklogs</h1>
+
+<div class="alert alert-info">
+    <strong>@Model</strong> record(s) in <code>ResourceHours</code> table.
+</div>
+
+@if (TempData["Message"] is string message)
+{
+    <div class="alert alert-success">@message</div>
+}
+@if (TempData["Error"] is string error)
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">Upload Excel File</div>
+            <div class="card-body">
+                <form method="post" asp-action="Upload" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <input type="file" name="file" class="form-control" accept=".xlsx" />
+                    </div>
+                    <button type="submit" class="btn btn-primary">Upload</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">Manage Data</div>
+            <div class="card-body">
+                <form method="post" asp-action="DeleteAll" onsubmit="return confirm('Delete all records? This cannot be undone.');">
+                    <button type="submit" class="btn btn-danger">Delete All</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
