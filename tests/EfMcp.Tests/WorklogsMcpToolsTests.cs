@@ -1,4 +1,3 @@
-using System.Data.Common;
 using EfMcp.AspNet.Data;
 using EfMcp.AspNet.Models;
 using EfMcp.AspNet.Services;
@@ -6,6 +5,7 @@ using EfMcp.AspNet.Tools;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using System.Data.Common;
 
 namespace EfMcp.Tests;
 

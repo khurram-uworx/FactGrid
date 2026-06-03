@@ -1,9 +1,9 @@
-using System.Collections;
-using System.Reflection;
 using EfMcp.AspNet.Data;
 using EfMcp.AspNet.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Collections;
+using System.Reflection;
 
 namespace EfMcp.AspNet.Controllers;
 

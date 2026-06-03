@@ -1,6 +1,6 @@
-using System.Text.Json;
 using EfMcp.AspNet.Models;
 using EfMcp.AspNet.Services;
+using System.Text.Json;
 
 namespace EfMcp.Tests;
 
