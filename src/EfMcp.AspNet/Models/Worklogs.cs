@@ -15,13 +15,14 @@ public class Worklogs
 
     [MaxLength(300)]
     [Description("The project, cost center, or activity code")]
-    public string Project { get; set; } = string.Empty;
+    public string? Project { get; set; } = string.Empty;
 
     [Description("Description of the work performed")]
     public string? Description { get; set; }
 
+    [Column(TypeName = "date")]
     [Description("Date the work was performed")]
-    public DateTime WorkDate { get; set; }
+    public DateOnly WorkDate { get; set; }
 
     [Column(TypeName = "decimal(10,2)")]
     [Description("Number of hours worked")]

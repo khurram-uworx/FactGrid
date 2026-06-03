@@ -1,9 +1,8 @@
-namespace EfMcp.AspNet.Models
-{
-    public class ErrorViewModel
-    {
-        public string? RequestId { get; set; }
+namespace EfMcp.AspNet.Models;
 
-        public bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
-    }
+public class ErrorViewModel
+{
+    public string? RequestId { get; set; }
+
+    public bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
 }

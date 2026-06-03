@@ -46,7 +46,7 @@ public class ExcelUploadServiceTests
             Assert.That(records[0].ResourceName, Is.EqualTo("John Doe"));
             Assert.That(records[0].Project, Is.EqualTo("Project Alpha"));
             Assert.That(records[0].Description, Is.EqualTo("Some work"));
-            Assert.That(records[0].WorkDate, Is.EqualTo(new DateTime(2024, 12, 25)));
+            Assert.That(records[0].WorkDate, Is.EqualTo(new DateOnly(2024, 12, 25)));
             Assert.That(records[0].Hours, Is.EqualTo(8.00m));
             Assert.That(records[0].ApprovalStatus, Is.EqualTo("Approved"));
         });

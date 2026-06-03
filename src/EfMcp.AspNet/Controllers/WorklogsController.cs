@@ -7,18 +7,18 @@ namespace EfMcp.AspNet.Controllers;
 
 public class WorklogsController : Controller
 {
-    private readonly ApplicationDbContext _db;
-    private readonly ExcelUploadService _excel;
+    readonly ApplicationDbContext db;
+    readonly ExcelUploadService excel;
 
     public WorklogsController(ApplicationDbContext db, ExcelUploadService excel)
     {
-        _db = db;
-        _excel = excel;
+        this.db = db;
+        this.excel = excel;
     }
 
     public async Task<IActionResult> Index()
     {
-        var count = await _db.Worklogs.CountAsync();
+        var count = await db.Worklogs.CountAsync();
         return View(count);
     }
 
@@ -42,13 +42,13 @@ public class WorklogsController : Controller
 
         using (var stream = file.OpenReadStream())
         {
-            (records, errors) = _excel.Parse(stream);
+            (records, errors) = excel.Parse(stream);
         }
 
         if (records.Count > 0)
         {
-            _db.Worklogs.AddRange(records);
-            await _db.SaveChangesAsync();
+            db.Worklogs.AddRange(records);
+            await db.SaveChangesAsync();
         }
 
         var message = $"Inserted {records.Count} records.";
@@ -62,7 +62,7 @@ public class WorklogsController : Controller
     [HttpPost]
     public async Task<IActionResult> DeleteAll()
     {
-        await _db.Worklogs.ExecuteDeleteAsync();
+        await db.Worklogs.ExecuteDeleteAsync();
         TempData["Message"] = "All records deleted.";
         return RedirectToAction(nameof(Index));
     }

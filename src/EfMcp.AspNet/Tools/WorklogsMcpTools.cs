@@ -92,6 +92,7 @@ Use the DescribeAsync tool to see the entity schema.")]
                 Type t when t == typeof(string) => "NVARCHAR",
                 Type t when t == typeof(int) => "INT",
                 Type t when t == typeof(decimal) => "DECIMAL(10,2)",
+                Type t when t == typeof(DateOnly) => "DATE",
                 Type t when t == typeof(DateTime) => "DATE",
                 Type t when t == typeof(bool) => "BIT",
                 _ => prop.PropertyType.Name
