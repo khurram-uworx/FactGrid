@@ -1,4 +1,5 @@
 using EfMcp.AspNet.Data;
+using EfMcp.AspNet.Models;
 using EfMcp.AspNet.Services;
 using EfMcp.AspNet.Tools;
 using Microsoft.AspNetCore.Identity;
@@ -45,12 +46,42 @@ builder.Services.AddDefaultIdentity<IdentityUser>(options => options.SignIn.Requ
     .AddEntityFrameworkStores<ApplicationDbContext>();
 builder.Services.AddControllersWithViews();
 
-builder.Services.AddScoped<ExcelUploadService>();
+// Phase 2 — Entity Registry
+var registry = new EntityRegistry();
+registry.Register<Worklogs>(new EntityRegistration(
+    EntityName: "worklogs",
+    DisplayName: "Worklogs",
+    ModelType: typeof(Worklogs),
+    ExcelParserType: typeof(WorklogsExcelParser),
+    TableName: "ResourceHours",
+    Description: "Employee worklog entries"
+));
+builder.Services.AddSingleton(registry);
+
+// DI registrations
+builder.Services.AddSingleton<IEntityContextAccessor, EntityContextAccessor>();
+builder.Services.AddScoped<IExcelParser<Worklogs>, WorklogsExcelParser>();
 builder.Services.AddSingleton<QueryValidationService>();
 
+// MCP server with per-request entity context
 builder.Services.AddMcpServer()
-    .WithHttpTransport(o => o.Stateless = true)
-    .WithToolsFromAssembly(typeof(WorklogsMcpTools).Assembly);
+    .WithHttpTransport(o =>
+    {
+        o.Stateless = true;
+        o.PerSessionExecutionContext = true;
+        o.ConfigureSessionOptions = (context, options, ct) =>
+        {
+            var entityName = context.Request.RouteValues["entityName"] as string;
+            if (!string.IsNullOrEmpty(entityName))
+            {
+                var entityRegistry = context.RequestServices.GetRequiredService<EntityRegistry>();
+                var accessor = context.RequestServices.GetRequiredService<IEntityContextAccessor>();
+                accessor.CurrentEntity = entityRegistry.Get(entityName);
+            }
+            return Task.CompletedTask;
+        };
+    })
+    .WithToolsFromAssembly(typeof(GenericSqlQueryTool).Assembly);
 
 var app = builder.Build();
 
@@ -106,8 +137,21 @@ app.MapControllerRoute(
 app.MapRazorPages()
    .WithStaticAssets();
 
-app.MapMcp("/api/mcp/Worklogs")
+// MCP entity routes
+app.MapMcp("/api/mcp/{entityName}")
    .AllowAnonymous();
+
+// Entity list endpoint
+app.MapGet("/api/entities", (EntityRegistry er) =>
+{
+    return er.GetAll().Select(e => new
+    {
+        name = e.EntityName,
+        displayName = e.DisplayName,
+        description = e.Description,
+        table = e.TableName
+    });
+}).AllowAnonymous();
 
 app.Run();
 

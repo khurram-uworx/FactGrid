@@ -4,7 +4,7 @@ using EfMcp.AspNet.Models;
 
 namespace EfMcp.AspNet.Services;
 
-public class ExcelUploadService
+public class WorklogsExcelParser : IExcelParser<Worklogs>
 {
     const string DateFormat = "d-MMM-yyyy";
 

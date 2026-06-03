@@ -3,7 +3,7 @@ using EfMcp.AspNet.Services;
 
 namespace EfMcp.Tests;
 
-public class ExcelUploadServiceTests
+public class WorklogsExcelParserTests
 {
     static MemoryStream CreateExcel(Action<IXLWorksheet> populate)
     {
@@ -36,8 +36,8 @@ public class ExcelUploadServiceTests
             sheet.Cell(2, 6).Value = "Approved";
         });
 
-        var service = new ExcelUploadService();
-        var (records, errors) = service.Parse(stream);
+        var parser = new WorklogsExcelParser();
+        var (records, errors) = parser.Parse(stream);
 
         Assert.That(records, Has.Count.EqualTo(1));
         Assert.That(errors, Is.Empty);
@@ -67,8 +67,8 @@ public class ExcelUploadServiceTests
             sheet.Cell(2, 6).Value = "Pending";
         });
 
-        var service = new ExcelUploadService();
-        var (records, errors) = service.Parse(stream);
+        var parser = new WorklogsExcelParser();
+        var (records, errors) = parser.Parse(stream);
 
         Assert.That(records, Has.Count.EqualTo(1));
         Assert.That(errors, Is.Empty);
@@ -89,8 +89,8 @@ public class ExcelUploadServiceTests
             sheet.Cell(3, 6).Value = "Approved";
         });
 
-        var service = new ExcelUploadService();
-        var (records, errors) = service.Parse(stream);
+        var parser = new WorklogsExcelParser();
+        var (records, errors) = parser.Parse(stream);
 
         Assert.That(records, Has.Count.EqualTo(1));
     }
@@ -107,8 +107,8 @@ public class ExcelUploadServiceTests
             sheet.Cell(2, 6).Value = "Approved";
         });
 
-        var service = new ExcelUploadService();
-        var (records, errors) = service.Parse(stream);
+        var parser = new WorklogsExcelParser();
+        var (records, errors) = parser.Parse(stream);
 
         Assert.That(records, Is.Empty);
         Assert.That(errors, Has.Count.EqualTo(1));
@@ -127,8 +127,8 @@ public class ExcelUploadServiceTests
             sheet.Cell(2, 6).Value = "Approved";
         });
 
-        var service = new ExcelUploadService();
-        var (records, errors) = service.Parse(stream);
+        var parser = new WorklogsExcelParser();
+        var (records, errors) = parser.Parse(stream);
 
         Assert.That(records, Is.Empty);
         Assert.That(errors, Has.Count.EqualTo(1));
@@ -147,8 +147,8 @@ public class ExcelUploadServiceTests
             sheet.Cell(2, 6).Value = "";
         });
 
-        var service = new ExcelUploadService();
-        var (records, errors) = service.Parse(stream);
+        var parser = new WorklogsExcelParser();
+        var (records, errors) = parser.Parse(stream);
 
         Assert.That(records, Is.Empty);
         Assert.That(errors, Has.Count.EqualTo(1));
@@ -159,8 +159,8 @@ public class ExcelUploadServiceTests
     {
         var stream = CreateExcel(_ => { });
 
-        var service = new ExcelUploadService();
-        var (records, errors) = service.Parse(stream);
+        var parser = new WorklogsExcelParser();
+        var (records, errors) = parser.Parse(stream);
 
         Assert.That(records, Is.Empty);
         Assert.That(errors, Is.Empty);
@@ -182,8 +182,8 @@ public class ExcelUploadServiceTests
             }
         });
 
-        var service = new ExcelUploadService();
-        var (records, errors) = service.Parse(stream);
+        var parser = new WorklogsExcelParser();
+        var (records, errors) = parser.Parse(stream);
 
         Assert.That(records, Has.Count.EqualTo(5));
         Assert.That(errors, Is.Empty);

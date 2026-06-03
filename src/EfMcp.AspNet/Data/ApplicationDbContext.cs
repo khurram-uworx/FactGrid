@@ -7,5 +7,8 @@ namespace EfMcp.AspNet.Data
     public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : IdentityDbContext(options)
     {
         public DbSet<Worklogs> Worklogs => Set<Worklogs>();
+
+        public IQueryable Set(Type entityType)
+            => Set(entityType);
     }
 }

@@ -1,12 +1,16 @@
-@model int
+@model long
 @{
-    ViewData["Title"] = "Worklogs";
+    var entity = ViewBag.Entity as EntityRegistration;
+    ViewData["Title"] = entity?.DisplayName ?? "Entity";
 }
 
-<h1>Worklogs</h1>
+<h1>@entity?.DisplayName</h1>
+<p class="text-muted">@entity?.Description</p>
 
 <div class="alert alert-info">
-    <strong>@Model</strong> record(s) in <code>ResourceHours</code> table.
+    <strong>@Model</strong> record(s) in <code>@entity?.TableName</code> table.
+    <br/>
+    <small>MCP endpoint: <code>/api/mcp/@entity?.EntityName</code></small>
 </div>
 
 @if (TempData["Message"] is string message)
@@ -23,7 +27,7 @@
         <div class="card">
             <div class="card-header">Upload Excel File</div>
             <div class="card-body">
-                <form method="post" asp-action="Upload" enctype="multipart/form-data">
+                <form method="post" asp-action="Upload" asp-route-entityName="@entity?.EntityName" enctype="multipart/form-data">
                     <div class="mb-3">
                         <input type="file" name="file" class="form-control" accept=".xlsx" />
                     </div>
@@ -37,7 +41,7 @@
         <div class="card">
             <div class="card-header">Manage Data</div>
             <div class="card-body">
-                <form method="post" asp-action="DeleteAll" onsubmit="return confirm('Delete all records? This cannot be undone.');">
+                <form method="post" asp-action="DeleteAll" asp-route-entityName="@entity?.EntityName" onsubmit="return confirm('Delete all records? This cannot be undone.');">
                     <button type="submit" class="btn btn-danger">Delete All</button>
                 </form>
             </div>
