@@ -1,3 +1,4 @@
+using System.Globalization;
 using ClosedXML.Excel;
 using EfMcp.AspNet.Models;
 
@@ -5,6 +6,8 @@ namespace EfMcp.AspNet.Services;
 
 public class ExcelUploadService
 {
+    const string DateFormat = "d-MMM-yyyy";
+
     public (List<Worklogs> Records, List<string> Errors) Parse(Stream excelStream)
     {
         var records = new List<Worklogs>();
@@ -25,7 +28,7 @@ public class ExcelUploadService
             var hoursStr = row.Cell(5).GetString().Trim();
             var approvalStatus = row.Cell(6).GetString().Trim();
 
-            if (string.IsNullOrWhiteSpace(resourceName) && string.IsNullOrWhiteSpace(project))
+            if (string.IsNullOrWhiteSpace(resourceName))
                 continue;
 
             if (string.IsNullOrWhiteSpace(resourceName))
@@ -34,25 +37,16 @@ public class ExcelUploadService
                 continue;
             }
 
-            if (string.IsNullOrWhiteSpace(project))
-            {
-                errors.Add($"Row {row.RowNumber()}: Project is required");
-                continue;
-            }
-
-            if (string.IsNullOrWhiteSpace(approvalStatus))
-            {
-                errors.Add($"Row {row.RowNumber()}: ApprovalStatus is required");
-                continue;
-            }
-
-            if (!DateOnly.TryParse(workDateStr, out var workDate))
+            if (!DateTime.TryParseExact(workDateStr, "M/d/yyyy h:mm:ss tt", CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var workDateTime))
             {
                 errors.Add($"Row {row.RowNumber()}: Could not parse WorkDate '{workDateStr}'");
                 continue;
             }
 
-            if (!decimal.TryParse(hoursStr, out var hours))
+            var workDate = DateOnly.FromDateTime(workDateTime);
+
+            if (!decimal.TryParse(hoursStr, NumberStyles.Any, CultureInfo.InvariantCulture, out var hours))
             {
                 errors.Add($"Row {row.RowNumber()}: Could not parse Hours '{hoursStr}'");
                 continue;
@@ -61,9 +55,9 @@ public class ExcelUploadService
             records.Add(new Worklogs
             {
                 ResourceName = resourceName,
-                Project = project,
+                Project = string.IsNullOrWhiteSpace(project) ? null : project,
                 Description = string.IsNullOrWhiteSpace(description) ? null : description,
-                WorkDate = workDate.ToDateTime(TimeOnly.MinValue),
+                WorkDate = workDate,
                 Hours = hours,
                 ApprovalStatus = approvalStatus
             });

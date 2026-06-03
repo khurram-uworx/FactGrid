@@ -31,7 +31,7 @@ public class ExcelUploadServiceTests
             sheet.Cell(2, 1).Value = "John Doe";
             sheet.Cell(2, 2).Value = "Project Alpha";
             sheet.Cell(2, 3).Value = "Some work";
-            sheet.Cell(2, 4).Value = "25-Dec-2024";
+            sheet.Cell(2, 4).Value = "12/25/2024 12:00:00 AM";
             sheet.Cell(2, 5).Value = "8.00";
             sheet.Cell(2, 6).Value = "Approved";
         });
@@ -46,7 +46,7 @@ public class ExcelUploadServiceTests
             Assert.That(records[0].ResourceName, Is.EqualTo("John Doe"));
             Assert.That(records[0].Project, Is.EqualTo("Project Alpha"));
             Assert.That(records[0].Description, Is.EqualTo("Some work"));
-            Assert.That(records[0].WorkDate, Is.EqualTo(new DateTime(2024, 12, 25)));
+            Assert.That(records[0].WorkDate, Is.EqualTo(new DateOnly(2024, 12, 25)));
             Assert.That(records[0].Hours, Is.EqualTo(8.00m));
             Assert.That(records[0].ApprovalStatus, Is.EqualTo("Approved"));
         });
@@ -62,7 +62,7 @@ public class ExcelUploadServiceTests
 
             sheet.Cell(2, 1).Value = "Alice";
             sheet.Cell(2, 2).Value = "Project B";
-            sheet.Cell(2, 4).Value = "01-Jan-2025";
+            sheet.Cell(2, 4).Value = "1/1/2025 12:00:00 AM";
             sheet.Cell(2, 5).Value = "6.5";
             sheet.Cell(2, 6).Value = "Pending";
         });
@@ -84,7 +84,7 @@ public class ExcelUploadServiceTests
             sheet.Cell(2, 2).Value = "";
             sheet.Cell(3, 1).Value = "Bob";
             sheet.Cell(3, 2).Value = "Project C";
-            sheet.Cell(3, 4).Value = "15-Feb-2025";
+            sheet.Cell(3, 4).Value = "2/15/2025 12:00:00 AM";
             sheet.Cell(3, 5).Value = "4";
             sheet.Cell(3, 6).Value = "Approved";
         });
@@ -122,7 +122,7 @@ public class ExcelUploadServiceTests
         {
             sheet.Cell(2, 1).Value = "Diana";
             sheet.Cell(2, 2).Value = "Project E";
-            sheet.Cell(2, 4).Value = "10-Mar-2025";
+            sheet.Cell(2, 4).Value = "3/10/2025 12:00:00 AM";
             sheet.Cell(2, 5).Value = "abc";
             sheet.Cell(2, 6).Value = "Approved";
         });
@@ -142,7 +142,7 @@ public class ExcelUploadServiceTests
         {
             sheet.Cell(2, 1).Value = "";
             sheet.Cell(2, 2).Value = "";
-            sheet.Cell(2, 4).Value = "10-Mar-2025";
+            sheet.Cell(2, 4).Value = "3/10/2025 12:00:00 AM";
             sheet.Cell(2, 5).Value = "5";
             sheet.Cell(2, 6).Value = "";
         });
@@ -176,7 +176,7 @@ public class ExcelUploadServiceTests
                 var row = i + 1;
                 sheet.Cell(row, 1).Value = $"Person {i}";
                 sheet.Cell(row, 2).Value = $"Project {i}";
-                sheet.Cell(row, 4).Value = $"{i:D2}-Jan-2025";
+                sheet.Cell(row, 4).Value = $"{i}/1/2025 12:00:00 AM";
                 sheet.Cell(row, 5).Value = $"{i * 2}";
                 sheet.Cell(row, 6).Value = "Approved";
             }

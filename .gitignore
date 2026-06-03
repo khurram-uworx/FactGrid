@@ -329,3 +329,5 @@ FodyWeavers.xsd
 # CodeMemory index databases — add .codememory/ to exclude from version control
 .codememory/
 .codememory.json
+
+/src/EfMcp.AspNet/App_Data

@@ -6,14 +6,18 @@ namespace EfMcp.AspNet.Services;
 
 public class QueryValidationService
 {
-    private static readonly GenericDialect Dialect = new();
-    private readonly SqlQueryParser _parser = new();
+    static readonly GenericDialect Dialect = new();
+
+    static ValidationResult Pass() => new(true, null);
+    static ValidationResult Fail(string error) => new(false, error);
+
+    readonly SqlQueryParser parser = new();
 
     public ValidationResult Validate(string query)
     {
         try
         {
-            var statements = _parser.Parse(query.AsSpan(), Dialect);
+            var statements = parser.Parse(query.AsSpan(), Dialect);
 
             if (statements.Count != 1)
                 return Fail("Only single-statement queries are supported");
@@ -37,7 +41,4 @@ public class QueryValidationService
             Error = this.Error;
         }
     }
-
-    private static ValidationResult Pass() => new(true, null);
-    private static ValidationResult Fail(string error) => new(false, error);
 }

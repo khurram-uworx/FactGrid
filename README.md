@@ -72,6 +72,7 @@ Excel File → Web UI → EF Core → SQL Server
 
 - Entities are decorated with `[Description]` attributes; these are used to describe the schema in MCP responses
 - Query parsing uses [SqlParserCS](https://github.com/TeddyDD/SqlParserCS) to reject non-SELECT statements
+- **Security:** The `sql_query` tool accepts raw SELECT queries. SqlParserCS gates non-SELECT statements, but queries are not parameterized. In production, connect with a read-only database user to limit risk.
 - No authentication/authorization on MCP endpoints (future consideration)
 - Each entity gets its own `/api/mcp/{Entity}` route
 
