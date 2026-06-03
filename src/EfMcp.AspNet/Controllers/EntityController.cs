@@ -1,6 +1,5 @@
 using System.Collections;
-using System.Data;
-using System.Data.Common;
+using System.Reflection;
 using EfMcp.AspNet.Data;
 using EfMcp.AspNet.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -22,21 +21,32 @@ public class EntityController : Controller
         this.serviceProvider = serviceProvider;
     }
 
-    async Task<long> countRows(EntityRegistration entity)
+    Task<long> CountRows(EntityRegistration entity)
     {
-        var conn = db.Database.GetDbConnection();
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT COUNT(*) FROM " + entity.TableName;
-        if (conn.State != ConnectionState.Open)
-            await conn.OpenAsync();
-        var result = await cmd.ExecuteScalarAsync();
-        return Convert.ToInt64(result);
+        var method = typeof(EntityController)
+            .GetMethod(nameof(CountRowsCore), BindingFlags.NonPublic | BindingFlags.Instance)!
+            .MakeGenericMethod(entity.ModelType);
+        var task = (Task<long>)method.Invoke(this, null)!;
+        return task;
     }
 
-    object? resolveParser(Type parserType, Type modelType)
+    async Task<long> CountRowsCore<T>() where T : class
     {
-        var interfaceType = typeof(IExcelParser<>).MakeGenericType(modelType);
-        return serviceProvider.GetService(interfaceType);
+        return await db.Set<T>().LongCountAsync();
+    }
+
+    Task DeleteAll(EntityRegistration entity)
+    {
+        var method = typeof(EntityController)
+            .GetMethod(nameof(DeleteAllCore), BindingFlags.NonPublic | BindingFlags.Instance)!
+            .MakeGenericMethod(entity.ModelType);
+        var task = (Task)method.Invoke(this, null)!;
+        return task;
+    }
+
+    async Task DeleteAllCore<T>() where T : class
+    {
+        await db.Set<T>().ExecuteDeleteAsync();
     }
 
     [HttpGet("")]
@@ -52,7 +62,7 @@ public class EntityController : Controller
         var entity = registry.Get(entityName);
         if (entity is null) return NotFound();
 
-        var count = await countRows(entity);
+        var count = await CountRows(entity);
         ViewBag.Entity = entity;
         return View(count);
     }
@@ -75,20 +85,8 @@ public class EntityController : Controller
             return RedirectToAction(nameof(Detail), new { entityName });
         }
 
-        var parser = resolveParser(entity.ExcelParserType, entity.ModelType);
-        if (parser is null)
-        {
-            TempData["Error"] = $"No Excel parser registered for entity '{entity.DisplayName}'.";
-            return RedirectToAction(nameof(Detail), new { entityName });
-        }
-
-        var parserType = typeof(IExcelParser<>).MakeGenericType(entity.ModelType);
-        var parseMethod = parserType.GetMethod("Parse")!;
-
         using var stream = file.OpenReadStream();
-        dynamic result = parseMethod.Invoke(parser, [stream])!;
-        IList records = (IList)result.Item1;
-        var errors = (List<string>)result.Item2;
+        var (records, errors) = ParseExcel(entity, stream);
 
         if (records.Count > 0)
         {
@@ -105,15 +103,34 @@ public class EntityController : Controller
         return RedirectToAction(nameof(Detail), new { entityName });
     }
 
+    (IList Records, List<string> Errors) ParseExcel(EntityRegistration entity, Stream stream)
+    {
+        var interfaceType = typeof(IExcelParser<>).MakeGenericType(entity.ModelType);
+        var parser = serviceProvider.GetRequiredService(interfaceType);
+
+        if (parser.GetType() != entity.ExcelParserType)
+        {
+            throw new InvalidOperationException(
+                $"Expected parser '{entity.ExcelParserType.Name}' for entity '{entity.EntityName}', " +
+                $"but DI resolved '{parser.GetType().Name}'.");
+        }
+
+        var parseMethod = interfaceType.GetMethod("Parse")!;
+        var result = parseMethod.Invoke(parser, [stream])!;
+
+        var item1Prop = result.GetType().GetProperty("Item1")!;
+        var item2Prop = result.GetType().GetProperty("Item2")!;
+
+        return ((IList)item1Prop.GetValue(result)!, (List<string>)item2Prop.GetValue(result)!);
+    }
+
     [HttpPost("{entityName}/DeleteAll")]
     public async Task<IActionResult> DeleteAll(string entityName)
     {
         var entity = registry.Get(entityName);
         if (entity is null) return NotFound();
 
-#pragma warning disable EF1003 // table name is from controlled registry, not user input
-        await db.Database.ExecuteSqlRawAsync("DELETE FROM " + entity.TableName);
-#pragma warning restore EF1003
+        await DeleteAll(entity);
         TempData["Message"] = "All records deleted.";
         return RedirectToAction(nameof(Detail), new { entityName });
     }

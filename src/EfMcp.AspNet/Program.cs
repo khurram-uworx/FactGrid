@@ -48,19 +48,24 @@ builder.Services.AddControllersWithViews();
 
 // Phase 2 — Entity Registry
 var registry = new EntityRegistry();
-registry.Register<Worklogs>(new EntityRegistration(
-    EntityName: "worklogs",
-    DisplayName: "Worklogs",
-    ModelType: typeof(Worklogs),
-    ExcelParserType: typeof(WorklogsExcelParser),
-    TableName: "ResourceHours",
-    Description: "Employee worklog entries"
-));
+registry.RegisterWithParser<Worklogs, WorklogsExcelParser>(
+    entityName: "worklogs",
+    displayName: "Worklogs",
+    tableName: "ResourceHours",
+    description: "Employee worklog entries"
+);
+registry.RegisterWithParser<ExpenseReport, ExpenseReportExcelParser>(
+    entityName: "expenses",
+    displayName: "Expense Reports",
+    tableName: "ExpenseReports",
+    description: "Employee expense report entries"
+);
 builder.Services.AddSingleton(registry);
 
 // DI registrations
 builder.Services.AddSingleton<IEntityContextAccessor, EntityContextAccessor>();
 builder.Services.AddScoped<IExcelParser<Worklogs>, WorklogsExcelParser>();
+builder.Services.AddScoped<IExcelParser<ExpenseReport>, ExpenseReportExcelParser>();
 builder.Services.AddSingleton<QueryValidationService>();
 
 // MCP server with per-request entity context
@@ -75,8 +80,14 @@ builder.Services.AddMcpServer()
             if (!string.IsNullOrEmpty(entityName))
             {
                 var entityRegistry = context.RequestServices.GetRequiredService<EntityRegistry>();
+                var entity = entityRegistry.Get(entityName);
+                if (entity is null)
+                {
+                    context.Response.StatusCode = 404;
+                    return Task.CompletedTask;
+                }
                 var accessor = context.RequestServices.GetRequiredService<IEntityContextAccessor>();
-                accessor.CurrentEntity = entityRegistry.Get(entityName);
+                accessor.CurrentEntity = entity;
             }
             return Task.CompletedTask;
         };
@@ -127,6 +138,14 @@ app.UseRouting();
 
 app.UseAuthorization();
 
+// Clear stale entity context before each request (prevents cross-request leakage)
+app.Use(async (context, next) =>
+{
+    var accessor = context.RequestServices.GetRequiredService<IEntityContextAccessor>();
+    accessor.CurrentEntity = null;
+    await next();
+});
+
 app.MapStaticAssets();
 
 app.MapControllerRoute(
@@ -141,8 +160,8 @@ app.MapRazorPages()
 app.MapMcp("/api/mcp/{entityName}")
    .AllowAnonymous();
 
-// Entity list endpoint
-app.MapGet("/api/entities", (EntityRegistry er) =>
+// Entity discovery endpoint
+app.MapGet("/api/mcp", (EntityRegistry er) =>
 {
     return er.GetAll().Select(e => new
     {

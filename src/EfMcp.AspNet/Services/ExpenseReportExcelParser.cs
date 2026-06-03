@@ -4,13 +4,11 @@ using EfMcp.AspNet.Models;
 
 namespace EfMcp.AspNet.Services;
 
-public class WorklogsExcelParser : IExcelParser<Worklogs>
+public class ExpenseReportExcelParser : IExcelParser<ExpenseReport>
 {
-    const string DateFormat = "d-MMM-yyyy";
-
-    public (List<Worklogs> Records, List<string> Errors) Parse(Stream excelStream)
+    public (List<ExpenseReport> Records, List<string> Errors) Parse(Stream excelStream)
     {
-        var records = new List<Worklogs>();
+        var records = new List<ExpenseReport>();
         var errors = new List<string>();
 
         using var workbook = new XLWorkbook(excelStream);
@@ -23,17 +21,17 @@ public class WorklogsExcelParser : IExcelParser<Worklogs>
             var r = row.RowNumber();
 
             var resourceName = sheet.Cell(r, 1).GetString().Trim();
-            var project = sheet.Cell(r, 2).GetString().Trim();
+            var category = sheet.Cell(r, 2).GetString().Trim();
             var description = sheet.Cell(r, 3).GetString().Trim();
-            var workDateStr = sheet.Cell(r, 4).GetString().Trim();
-            var hoursStr = sheet.Cell(r, 5).GetString().Trim();
+            var amountStr = sheet.Cell(r, 4).GetString().Trim();
+            var expenseDateStr = sheet.Cell(r, 5).GetString().Trim();
             var approvalStatus = sheet.Cell(r, 6).GetString().Trim();
 
             var anyData = !string.IsNullOrWhiteSpace(resourceName)
-                || !string.IsNullOrWhiteSpace(project)
+                || !string.IsNullOrWhiteSpace(category)
                 || !string.IsNullOrWhiteSpace(description)
-                || !string.IsNullOrWhiteSpace(workDateStr)
-                || !string.IsNullOrWhiteSpace(hoursStr)
+                || !string.IsNullOrWhiteSpace(amountStr)
+                || !string.IsNullOrWhiteSpace(expenseDateStr)
                 || !string.IsNullOrWhiteSpace(approvalStatus);
 
             if (!anyData)
@@ -45,28 +43,28 @@ public class WorklogsExcelParser : IExcelParser<Worklogs>
                 continue;
             }
 
-            if (!DateTime.TryParseExact(workDateStr, "M/d/yyyy h:mm:ss tt", CultureInfo.InvariantCulture,
-                DateTimeStyles.None, out var workDateTime))
+            if (!decimal.TryParse(amountStr, NumberStyles.Any, CultureInfo.InvariantCulture, out var amount))
             {
-                errors.Add($"Row {row.RowNumber()}: Could not parse WorkDate '{workDateStr}'");
+                errors.Add($"Row {row.RowNumber()}: Could not parse Amount '{amountStr}'");
                 continue;
             }
 
-            var workDate = DateOnly.FromDateTime(workDateTime);
-
-            if (!decimal.TryParse(hoursStr, NumberStyles.Any, CultureInfo.InvariantCulture, out var hours))
+            if (!DateTime.TryParseExact(expenseDateStr, "M/d/yyyy h:mm:ss tt", CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var expenseDateTime))
             {
-                errors.Add($"Row {row.RowNumber()}: Could not parse Hours '{hoursStr}'");
+                errors.Add($"Row {row.RowNumber()}: Could not parse ExpenseDate '{expenseDateStr}'");
                 continue;
             }
 
-            records.Add(new Worklogs
+            var expenseDate = DateOnly.FromDateTime(expenseDateTime);
+
+            records.Add(new ExpenseReport
             {
                 ResourceName = resourceName,
-                Project = string.IsNullOrWhiteSpace(project) ? null : project,
+                Category = string.IsNullOrWhiteSpace(category) ? null : category,
                 Description = string.IsNullOrWhiteSpace(description) ? null : description,
-                WorkDate = workDate,
-                Hours = hours,
+                Amount = amount,
+                ExpenseDate = expenseDate,
                 ApprovalStatus = approvalStatus
             });
         }

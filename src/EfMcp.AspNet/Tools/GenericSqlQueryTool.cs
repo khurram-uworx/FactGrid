@@ -37,6 +37,9 @@ Use the DescribeAsync tool to see the entity schema.")]
         var (isValid, error) = _validator.Validate(query);
         if (!isValid) return $"Error: {error}";
 
+        var (isScoped, scopeError) = _validator.ValidateScoped(query, entity.TableName);
+        if (!isScoped) return $"Error: {scopeError}";
+
         maxResults = Math.Clamp(maxResults, 1, 10000);
 
         using var scope = _serviceProvider.CreateScope();

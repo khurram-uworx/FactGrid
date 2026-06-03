@@ -118,4 +118,114 @@ public class QueryValidationTests
         Assert.That(isValid, Is.False);
         Assert.That(error, Does.Contain("Parse error"));
     }
+
+    [Test]
+    public void ValidateScoped_AllowedTable_Passes()
+    {
+        var (isValid, error) = _service.ValidateScoped("SELECT * FROM ResourceHours", "ResourceHours");
+        Assert.That(isValid, Is.True);
+        Assert.That(error, Is.Null);
+    }
+
+    [Test]
+    public void ValidateScoped_OtherTable_Rejected()
+    {
+        var (isValid, error) = _service.ValidateScoped("SELECT * FROM OtherTable", "ResourceHours");
+        Assert.That(isValid, Is.False);
+        Assert.That(error, Does.Contain("OtherTable"));
+        Assert.That(error, Does.Contain("ResourceHours"));
+    }
+
+    [Test]
+    public void ValidateScoped_JoinToOtherTable_Rejected()
+    {
+        var (isValid, error) = _service.ValidateScoped(
+            "SELECT w.* FROM ResourceHours w JOIN OtherTable o ON w.Id = o.Id", "ResourceHours");
+        Assert.That(isValid, Is.False);
+        Assert.That(error, Does.Contain("OtherTable"));
+    }
+
+    [Test]
+    public void ValidateScoped_SubqueryToOtherTable_Rejected()
+    {
+        var (isValid, error) = _service.ValidateScoped(
+            "SELECT * FROM ResourceHours WHERE Id IN (SELECT Id FROM OtherTable)", "ResourceHours");
+        Assert.That(isValid, Is.False);
+        Assert.That(error, Does.Contain("OtherTable"));
+    }
+
+    [Test]
+    public void ValidateScoped_CteReferencingAllowed_Passes()
+    {
+        var (isValid, error) = _service.ValidateScoped(
+            "WITH cte AS (SELECT * FROM ResourceHours) SELECT * FROM cte", "ResourceHours");
+        Assert.That(isValid, Is.True);
+    }
+
+    [Test]
+    public void ValidateScoped_CteReferencingOther_Rejected()
+    {
+        var (isValid, error) = _service.ValidateScoped(
+            "WITH cte AS (SELECT * FROM OtherTable) SELECT * FROM cte", "ResourceHours");
+        Assert.That(isValid, Is.False);
+        Assert.That(error, Does.Contain("OtherTable"));
+    }
+
+    [Test]
+    public void ValidateScoped_SelfJoin_Passes()
+    {
+        var (isValid, error) = _service.ValidateScoped(
+            "SELECT a.* FROM ResourceHours a JOIN ResourceHours b ON a.Id = b.Id", "ResourceHours");
+        Assert.That(isValid, Is.True);
+    }
+
+    [Test]
+    public void ValidateScoped_DerivedTableWithAllowedSubquery_Passes()
+    {
+        var (isValid, error) = _service.ValidateScoped(
+            "SELECT * FROM (SELECT * FROM ResourceHours) AS t", "ResourceHours");
+        Assert.That(isValid, Is.True);
+    }
+
+    [Test]
+    public void ValidateScoped_DerivedTableWithOther_Rejected()
+    {
+        var (isValid, error) = _service.ValidateScoped(
+            "SELECT * FROM (SELECT * FROM OtherTable) AS t", "ResourceHours");
+        Assert.That(isValid, Is.False);
+        Assert.That(error, Does.Contain("OtherTable"));
+    }
+
+    [Test]
+    public void ValidateScoped_AliasedTable_Passes()
+    {
+        var (isValid, error) = _service.ValidateScoped(
+            "SELECT rh.ResourceName FROM ResourceHours rh", "ResourceHours");
+        Assert.That(isValid, Is.True);
+    }
+
+    [Test]
+    public void ValidateScoped_ExistsSubqueryOther_Rejected()
+    {
+        var (isValid, error) = _service.ValidateScoped(
+            "SELECT * FROM ResourceHours WHERE EXISTS (SELECT 1 FROM OtherTable)", "ResourceHours");
+        Assert.That(isValid, Is.False);
+        Assert.That(error, Does.Contain("OtherTable"));
+    }
+
+    [Test]
+    public void ValidateScoped_UnionOtherTable_Rejected()
+    {
+        var (isValid, error) = _service.ValidateScoped(
+            "SELECT * FROM ResourceHours UNION ALL SELECT * FROM OtherTable", "ResourceHours");
+        Assert.That(isValid, Is.False);
+        Assert.That(error, Does.Contain("OtherTable"));
+    }
+
+    [Test]
+    public void ValidateScoped_NoFromClause_Passes()
+    {
+        var (isValid, error) = _service.ValidateScoped("SELECT 1", "ResourceHours");
+        Assert.That(isValid, Is.True);
+    }
 }
