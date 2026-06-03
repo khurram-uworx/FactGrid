@@ -1,0 +1,22 @@
+@model IReadOnlyList<EntityRegistration>
+@{
+    ViewData["Title"] = "Entities";
+}
+
+<h1>Entities</h1>
+
+<div class="row row-cols-1 row-cols-md-3 g-4">
+    @foreach (var entity in Model)
+    {
+        <div class="col">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">@entity.DisplayName</h5>
+                    <p class="card-text">@entity.Description</p>
+                    <p class="card-text"><small class="text-muted">Table: <code>@entity.TableName</code></small></p>
+                    <a asp-action="Detail" asp-route-entityName="@entity.EntityName" class="btn btn-primary">Manage</a>
+                </div>
+            </div>
+        </div>
+    }
+</div>

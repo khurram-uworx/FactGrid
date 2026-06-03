@@ -1,28 +1,29 @@
-using System.ComponentModel;
-using System.Reflection;
-using System.Text;
 using EfMcp.AspNet.Data;
-using EfMcp.AspNet.Models;
 using EfMcp.AspNet.Services;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.Server;
+using System.ComponentModel;
+using System.Reflection;
+using System.Text;
 
 namespace EfMcp.AspNet.Tools;
 
 [McpServerToolType]
-public class WorklogsMcpTools
+public class GenericSqlQueryTool
 {
     private readonly QueryValidationService _validator;
     private readonly IServiceProvider _serviceProvider;
+    private readonly IEntityContextAccessor _entityContext;
 
-    public WorklogsMcpTools(QueryValidationService validator, IServiceProvider serviceProvider)
+    public GenericSqlQueryTool(QueryValidationService validator, IServiceProvider serviceProvider, IEntityContextAccessor entityContext)
     {
         _validator = validator;
         _serviceProvider = serviceProvider;
+        _entityContext = entityContext;
     }
 
     [McpServerTool, Description(@"
-Execute SELECT-only SQL queries against the Worklogs (ResourceHours) entity.
+Execute SELECT-only SQL queries against the current entity's table.
 
 Returns results as a markdown table. Only single-statement SELECT queries are allowed.
 Use the DescribeAsync tool to see the entity schema.")]
@@ -30,8 +31,14 @@ Use the DescribeAsync tool to see the entity schema.")]
         [Description("SQL query string (e.g. SELECT * FROM ResourceHours WHERE ResourceName LIKE '%John%'")] string query,
         [Description("Maximum number of rows to return (default 100, max 10000)")] int maxResults = 100)
     {
+        var entity = _entityContext.CurrentEntity;
+        if (entity is null) return "Error: No entity context available. Use /api/mcp/{entityName} endpoint.";
+
         var (isValid, error) = _validator.Validate(query);
         if (!isValid) return $"Error: {error}";
+
+        var (isScoped, scopeError) = _validator.ValidateScoped(query, entity.TableName);
+        if (!isScoped) return $"Error: {scopeError}";
 
         maxResults = Math.Clamp(maxResults, 1, 10000);
 
@@ -75,17 +82,26 @@ Use the DescribeAsync tool to see the entity schema.")]
         return sb.ToString();
     }
 
-    [McpServerTool, Description("Describe the Worklogs entity schema, including column names, types, and descriptions.")]
+    [McpServerTool, Description("Describe the current entity schema, including column names, types, and descriptions.")]
     public Task<string> DescribeAsync()
     {
-        var props = typeof(Worklogs).GetProperties(BindingFlags.Public | BindingFlags.Instance);
+        var entity = _entityContext.CurrentEntity;
+        if (entity is null)
+            return Task.FromResult("Error: No entity context available. Use /api/mcp/{entityName} endpoint.");
+
+        var props = entity.ModelType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
 
         var sb = new StringBuilder();
+        sb.AppendLine($"# {entity.DisplayName} ({entity.TableName})");
+        sb.AppendLine();
+        sb.AppendLine(entity.Description);
+        sb.AppendLine();
         sb.AppendLine("| Column | Type | Description |");
         sb.AppendLine("|--------|------|-------------|");
 
         foreach (var prop in props)
         {
+            if (prop.Name == "Id") continue;
             var desc = prop.GetCustomAttribute<DescriptionAttribute>()?.Description ?? "";
             var colType = prop.PropertyType switch
             {

@@ -1,4 +1,5 @@
 using EfMcp.AspNet.Data;
+using EfMcp.AspNet.Models;
 using EfMcp.AspNet.Services;
 using EfMcp.AspNet.Tools;
 using Microsoft.AspNetCore.Identity;
@@ -45,12 +46,53 @@ builder.Services.AddDefaultIdentity<IdentityUser>(options => options.SignIn.Requ
     .AddEntityFrameworkStores<ApplicationDbContext>();
 builder.Services.AddControllersWithViews();
 
-builder.Services.AddScoped<ExcelUploadService>();
+// Phase 2 — Entity Registry
+var registry = new EntityRegistry();
+registry.RegisterWithParser<Worklogs, WorklogsExcelParser>(
+    entityName: "worklogs",
+    displayName: "Worklogs",
+    tableName: "ResourceHours",
+    description: "Employee worklog entries"
+);
+registry.RegisterWithParser<ExpenseReport, ExpenseReportExcelParser>(
+    entityName: "expenses",
+    displayName: "Expense Reports",
+    tableName: "ExpenseReports",
+    description: "Employee expense report entries"
+);
+builder.Services.AddSingleton(registry);
+
+// DI registrations
+builder.Services.AddSingleton<IEntityContextAccessor, EntityContextAccessor>();
+builder.Services.AddScoped<IExcelParser<Worklogs>, WorklogsExcelParser>();
+builder.Services.AddScoped<IExcelParser<ExpenseReport>, ExpenseReportExcelParser>();
 builder.Services.AddSingleton<QueryValidationService>();
 
+// MCP server with per-request entity context
 builder.Services.AddMcpServer()
-    .WithHttpTransport(o => o.Stateless = true)
-    .WithToolsFromAssembly(typeof(WorklogsMcpTools).Assembly);
+    .WithHttpTransport(o =>
+    {
+        o.Stateless = true;
+        o.PerSessionExecutionContext = true;
+        o.ConfigureSessionOptions = (context, options, ct) =>
+        {
+            var entityName = context.Request.RouteValues["entityName"] as string;
+            if (!string.IsNullOrEmpty(entityName))
+            {
+                var entityRegistry = context.RequestServices.GetRequiredService<EntityRegistry>();
+                var entity = entityRegistry.Get(entityName);
+                if (entity is null)
+                {
+                    context.Response.StatusCode = 404;
+                    return Task.CompletedTask;
+                }
+                var accessor = context.RequestServices.GetRequiredService<IEntityContextAccessor>();
+                accessor.CurrentEntity = entity;
+            }
+            return Task.CompletedTask;
+        };
+    })
+    .WithToolsFromAssembly(typeof(GenericSqlQueryTool).Assembly);
 
 var app = builder.Build();
 
@@ -96,6 +138,14 @@ app.UseRouting();
 
 app.UseAuthorization();
 
+// Clear stale entity context before each request (prevents cross-request leakage)
+app.Use(async (context, next) =>
+{
+    var accessor = context.RequestServices.GetRequiredService<IEntityContextAccessor>();
+    accessor.CurrentEntity = null;
+    await next();
+});
+
 app.MapStaticAssets();
 
 app.MapControllerRoute(
@@ -106,8 +156,21 @@ app.MapControllerRoute(
 app.MapRazorPages()
    .WithStaticAssets();
 
-app.MapMcp("/api/mcp/Worklogs")
+// MCP entity routes
+app.MapMcp("/api/mcp/{entityName}")
    .AllowAnonymous();
+
+// Entity discovery endpoint
+app.MapGet("/api/mcp", (EntityRegistry er) =>
+{
+    return er.GetAll().Select(e => new
+    {
+        name = e.EntityName,
+        displayName = e.DisplayName,
+        description = e.Description,
+        table = e.TableName
+    });
+}).AllowAnonymous();
 
 app.Run();
 

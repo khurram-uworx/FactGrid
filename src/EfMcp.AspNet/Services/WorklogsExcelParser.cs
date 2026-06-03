@@ -1,10 +1,10 @@
-using System.Globalization;
 using ClosedXML.Excel;
 using EfMcp.AspNet.Models;
+using System.Globalization;
 
 namespace EfMcp.AspNet.Services;
 
-public class ExcelUploadService
+public class WorklogsExcelParser : IExcelParser<Worklogs>
 {
     const string DateFormat = "d-MMM-yyyy";
 
@@ -20,15 +20,23 @@ public class ExcelUploadService
         foreach (var row in rows)
         {
             if (row.RowNumber() == 1) continue;
+            var r = row.RowNumber();
 
-            var resourceName = row.Cell(1).GetString().Trim();
-            var project = row.Cell(2).GetString().Trim();
-            var description = row.Cell(3).GetString().Trim();
-            var workDateStr = row.Cell(4).GetString().Trim();
-            var hoursStr = row.Cell(5).GetString().Trim();
-            var approvalStatus = row.Cell(6).GetString().Trim();
+            var resourceName = sheet.Cell(r, 1).GetString().Trim();
+            var project = sheet.Cell(r, 2).GetString().Trim();
+            var description = sheet.Cell(r, 3).GetString().Trim();
+            var workDateStr = sheet.Cell(r, 4).GetString().Trim();
+            var hoursStr = sheet.Cell(r, 5).GetString().Trim();
+            var approvalStatus = sheet.Cell(r, 6).GetString().Trim();
 
-            if (string.IsNullOrWhiteSpace(resourceName))
+            var anyData = !string.IsNullOrWhiteSpace(resourceName)
+                || !string.IsNullOrWhiteSpace(project)
+                || !string.IsNullOrWhiteSpace(description)
+                || !string.IsNullOrWhiteSpace(workDateStr)
+                || !string.IsNullOrWhiteSpace(hoursStr)
+                || !string.IsNullOrWhiteSpace(approvalStatus);
+
+            if (!anyData)
                 continue;
 
             if (string.IsNullOrWhiteSpace(resourceName))
