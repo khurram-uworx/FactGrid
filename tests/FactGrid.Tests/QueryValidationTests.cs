@@ -229,6 +229,44 @@ public class QueryValidationTests
         Assert.That(isValid, Is.True);
     }
 
+    [TestCase("SELECT * FROM ResourceHours ORDER BY (SELECT Id FROM OtherTable)")]
+    [TestCase("SELECT * FROM ResourceHours LIMIT (SELECT Id FROM OtherTable)")]
+    [TestCase("SELECT * FROM ResourceHours OFFSET (SELECT Id FROM OtherTable)")]
+    [TestCase("SELECT * FROM ResourceHours LIMIT 1 BY (SELECT Id FROM OtherTable)")]
+    [TestCase("SELECT * FROM ResourceHours ORDER BY Id WITH FILL FROM (SELECT Id FROM OtherTable)")]
+    [TestCase("SELECT * FROM ResourceHours ORDER BY Id WITH FILL INTERPOLATE (Id AS (SELECT Id FROM OtherTable))")]
+    [TestCase("(SELECT * FROM ResourceHours) ORDER BY (SELECT Id FROM OtherTable)")]
+    public void ValidateScoped_QueryLevelClauseWithOtherTableSubquery_Rejected(string query)
+    {
+        var (isValid, error) = _service.ValidateScoped(query, "ResourceHours");
+        Assert.That(isValid, Is.False);
+        Assert.That(error, Does.Contain("OtherTable"));
+    }
+
+    [TestCase("SELECT * FROM ResourceHours ORDER BY (SELECT Id FROM ResourceHours)")]
+    [TestCase("SELECT * FROM ResourceHours LIMIT 10")]
+    [TestCase("SELECT * FROM ResourceHours OFFSET 10")]
+    [TestCase("SELECT * FROM ResourceHours FETCH FIRST 10 ROWS ONLY")]
+    [TestCase("SELECT * FROM ResourceHours LIMIT 1 BY Id")]
+    [TestCase("SELECT * FROM ResourceHours ORDER BY Id WITH FILL FROM 1 TO 10 STEP 1")]
+    [TestCase("SELECT * FROM ResourceHours ORDER BY Id WITH FILL INTERPOLATE (Id AS Id + 1)")]
+    public void ValidateScoped_QueryLevelClauseWithAllowedTableOrLiteral_Passes(string query)
+    {
+        var (isValid, error) = _service.ValidateScoped(query, "ResourceHours");
+        Assert.That(isValid, Is.True, error);
+    }
+
+    [Test]
+    public void ValidateScoped_FetchWithSubqueryQuantity_ParserRejectsSyntax()
+    {
+        var (isValid, error) = _service.ValidateScoped(
+            "SELECT * FROM ResourceHours FETCH FIRST (SELECT Id FROM OtherTable) ROWS ONLY",
+            "ResourceHours");
+
+        Assert.That(isValid, Is.False);
+        Assert.That(error, Does.StartWith("Parse error:"));
+    }
+
     [Test]
     public void ValidateTables_SingleAllowed_Passes()
     {
