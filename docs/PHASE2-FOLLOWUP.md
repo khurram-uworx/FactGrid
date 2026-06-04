@@ -291,19 +291,18 @@ public static class EntityPrompts
 | `src/FactGrid.AspNet/Tools/EntityResources.cs` | **New** — MCP resource methods |
 | `src/FactGrid.AspNet/Tools/EntityPrompts.cs` | **New** — MCP prompt methods |
 | `src/FactGrid.AspNet/Program.cs` | Add `/api/mcp` route, register resources + prompts assemblies |
-| `tests/FactGrid.Tests/GenericSqlQueryToolTests.cs` | Add tests for scoped validation, global describe |
-| `docs/GETTING-STARTED.md` | **New** — Project onboarding guide (after implementation) |
+| `tests/FactGrid.Tests/WorklogsMcpToolsTests.cs` | Add tests for global describe mode, global sql_query |
+| `docs/GETTING-STARTED.md` | **New** — project onboarding guide (after implementation) |
 
 ## Estimated Scope
 
 | Work Item | Effort |
-|---|---|
-| Dual route mapping (`/api/mcp` + `/{entityName}`) | Small |
-| SQL table reference extraction + scoped validation | Medium |
+|---|---|---|
+| Global `/api/mcp` route + global sql_query mode | Small |
 | EntityResources class (list + schema resources) | Medium |
 | EntityPrompts class (global + scoped prompts) | Small |
 | Global describe mode (null entity context) | Small |
-| Integration tests for scoped SQL validation | Medium |
+| Integration tests for global mode + resources + prompts | Medium |
 | `GETTING-STARTED.md` — project onboarding guide | Small |
 
-Total: **Medium** (smaller than Phase 2 — leverages existing Phase 2 infrastructure).
+Total: **Medium** (leverages existing scoped routing, scoped SQL validation, and entity registry infrastructure).

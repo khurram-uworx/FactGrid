@@ -97,26 +97,26 @@ if (statements[0] is not Statement.Select) fail;
 - Supported: `"sqlserver"`, `"sqlite"`, `"postgresql"`
 - Provider switch in `Program.cs` using `UseSqlServer` / `UseSqlite` / `UseNpgsql`
 
+### Entity Registry
+
+- Singleton `EntityRegistry` maps entity names to model types, table names, Excel parser types, and descriptions
+- Registered in `Program.cs` via `registry.RegisterWithParser<TModel, TParser>(entityName, displayName, tableName, description)`
+- Each entity needs a model class, a `DbSet<T>` in `ApplicationDbContext`, an `IExcelParser<T>` implementation, and a registry entry
+- Provides `Get(entityName)` for per-entity routing in both MCP and web UI controllers
+- Serves the `GET /api/mcp` discovery endpoint listing all registered entities
+
 ---
 
 ## NuGet Packages (key ones)
 
-| Package | Version | Used For |
-|---------|---------|----------|
-| `ClosedXML` | 0.105.0 | Excel file parsing |
-| `SqlParserCS` | 0.6.5 | SELECT-only SQL validation |
-| `ModelContextProtocol` | 1.3.0 | MCP tool attributes |
-| `ModelContextProtocol.AspNetCore` | 1.3.0 | Streamable HTTP transport |
-| `Microsoft.EntityFrameworkCore.Sqlite` | 10.0.8 | SQLite provider |
-| `Npgsql.EntityFrameworkCore.PostgreSQL` | 10.0.0 | PostgreSQL provider |
-
----
-
-## Phase Plans
-
-- `docs/PHASE1.md` — Core: Worklogs entity (complete)
-- `docs/PHASE2.md` — Multi-entity support (future)
-- `docs/PHASE3.md` — Two-MCP architecture: local stdio + remote web (future)
+| Package | Used For |
+|---------|----------|
+| `ClosedXML` | Excel file parsing |
+| `SqlParserCS` | SELECT-only SQL validation |
+| `ModelContextProtocol` | MCP tool attributes |
+| `ModelContextProtocol.AspNetCore` | Streamable HTTP transport |
+| `Microsoft.EntityFrameworkCore.Sqlite` | SQLite provider |
+| `Npgsql.EntityFrameworkCore.PostgreSQL` | PostgreSQL provider |
 
 ---
 
