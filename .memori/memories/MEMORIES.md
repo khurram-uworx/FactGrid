@@ -1,0 +1,3 @@
+# Memories
+
+- Phase 3 plan written to docs/PHASE3.md. Architecture: FactGrid shared library (models + [ExcelColumn] attribute + parsers + EntityRegistry), FactGrid.Mcp (STDIO console app for data entry: generate_template, validate_excel, upload_excel, list_entities), FactGrid.AspNet (HTTP server with existing Phase 2 MCP tools unchanged). Key pattern references from CodeMemory captured inline in the doc. FACTGRID_SERVER_URL env var configures upload target. <!-- id=e9608f0f6bf945cc8d3e4ca9ecc1d3c5 entity=default type= ts=2026-06-04T17:41:55.1549505+00:00 v=1 tags=factgrid,,phase3,,plan,,architecture -->
