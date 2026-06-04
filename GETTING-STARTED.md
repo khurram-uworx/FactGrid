@@ -132,15 +132,6 @@ All responses share the same JSON contract (`IngestionResult`):
 }
 ```
 
-### End-to-End Upload Flow
-
-1. Local coding agent calls `validate_excel` to preview records and catch errors early.
-2. Agent or user fixes any validation errors in the workbook.
-3. Agent calls `upload_excel`, which re-parses the workbook locally and rejects it if errors remain.
-4. If local validation passes, the tool uploads the file to the central ingestion API.
-5. The server re-parses the workbook authoritatively and either inserts all records atomically or returns a structured error.
-6. The tool returns the server's structured response (success count or server errors).
-
 ## Verify the App
 
 ### Browse Web UI
@@ -240,18 +231,6 @@ curl -X POST https://localhost:5001/api/mcp/worklogs \
 
 Expected columns: header row (row 1) is skipped, data starts at row 2. Column positions are determined by `[ExcelColumn]` metadata.
 
-## Running Tests
+## Contributing
 
-```bash
-dotnet test tests/FactGrid.Tests
-```
-
-Uses in-memory SQLite — no database setup needed.
-
-## Adding a New Entity
-
-See [Adding an Entity](../README.md#adding-an-entity) in the README for the step-by-step process.
-
-## Project Layout
-
-See [Project Structure](../AGENTS.md#project-structure) in AGENTS.md for the directory layout.
+See [AGENTS.md](AGENTS.md) for repository structure, implementation constraints, and contributor verification.

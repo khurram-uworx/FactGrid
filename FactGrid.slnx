@@ -4,6 +4,7 @@
   </Folder>
   <Folder Name="/Solution Items/">
     <File Path="AGENTS.md" />
+    <File Path="GETTING-STARTED.md" />
     <File Path="opencode.json" />
     <File Path="README.md" />
   </Folder>

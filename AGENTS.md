@@ -4,7 +4,7 @@
 
 Engineering constraints and implementation guidance for AI coding agents contributing to FactGrid.
 
-**First read [README.md](README.md)** for the project overview, quick start, and tool reference.
+Read [README.md](README.md) for the product architecture and [GETTING-STARTED.md](GETTING-STARTED.md) for operating instructions.
 
 ---
 
@@ -15,15 +15,13 @@ Engineering constraints and implementation guidance for AI coding agents contrib
 
 ---
 
-## Build / Run / Test
+## Contributor Verification
 
 ```bash
-dotnet build src/FactGrid.AspNet
-dotnet run --project src/FactGrid.AspNet
-dotnet run --project src/FactGrid.Mcp
+dotnet build FactGrid.slnx
 dotnet test tests/FactGrid.Tests
-dotnet ef migrations add <Name> --project src/FactGrid.AspNet
-dotnet ef database update --project src/FactGrid.AspNet
+dotnet ef migrations has-pending-model-changes --project src/FactGrid.AspNet
+git diff --check
 ```
 
 ---
@@ -47,7 +45,8 @@ FactGrid/
 │   ├── Tools/DataEntryTools.cs   # 4 STDIO MCP tools (generate_template, validate_excel, upload_excel, list_entities)
 │   └── Program.cs               # Startup — DI, STDIO MCP server
 ├── tests/FactGrid.Tests/           # NUnit tests (199+ tests)
-├── docs/                        # Phase plans, getting-started guide, task templates
+├── docs/                        # Task templates and architecture decision records
+├── GETTING-STARTED.md           # Installation, configuration, and operation
 └── AGENTS.md                    # ← you are here
 ```
 
@@ -75,9 +74,9 @@ Do not reinvent infrastructure. Prefer existing .NET and ecosystem primitives ov
 - **Models**: Entity classes with both EF and `[ExcelColumn]` metadata; `IngestionResult` response contract
 - **ExcelColumnAttribute**: `Position`, `Title`, `Required`, `Example`, `Format`
 - **ExcelColumnMetadata**: Cache-backed reader for `GetColumns()`, `GetColumnIndex()`, `Validate()`, `ValidateRequired()`
-- **Parsers** (`WorklogsExcelParser`, `ExpensesExcelParser`): Implement `IExcelParser<T>`. Use `ExcelColumnMetadata.GetColumnIndex()` for metadata-driven column position lookup. Accept typed DateTime cells and text dates (`M/d/yyyy h:mm:ss tt`, `yyyy-MM-dd`). Never throw on bad data — return errors list.
-- **ExcelDateHelper**: `ParseDateText()` accepts both date formats above
-- **ExcelTemplateGenerator**: Generates `.xlsx` with typed example values, `yyyy-mm-dd` for date cells, `0.00` for decimal cells
+- **Parsers** (`WorklogsExcelParser`, `ExpensesExcelParser`): Implement `IExcelParser<T>`. Use `ExcelColumnMetadata.GetColumnIndex()` for metadata-driven column position lookup. Never throw on bad data — return errors list.
+- **ExcelDateHelper**: Owns the accepted invariant text-date parsing rules
+- **ExcelTemplateGenerator**: Generates typed `.xlsx` examples using entity metadata
 - **EntityRegistry**: Singleton runtime registry. Populated by `AddFactGridEntities()` in `ServiceCollectionExtensions`
 - **FactGridEntityCatalog**: Static class listing all supported entity definitions (names, types, parser types, table names)
 - **EntitySchemaHelper**: Builds structured schema metadata from entity models
@@ -97,14 +96,11 @@ Do not reinvent infrastructure. Prefer existing .NET and ecosystem primitives ov
 
 ### MCP Tools — Local STDIO (`FactGrid.Mcp`)
 
-- Single `DataEntryTools` class with 4 tools:
-  - `generate_template(entityName, outputPath)` — requires `.xlsx` extension on outputPath
-  - `validate_excel(entityName, filePath)` — up to 20-record preview; catches corrupt workbooks with error message
-  - `upload_excel(entityName, filePath)` — requires `FACTGRID_SERVER_URL` env var; validates locally before HTTP upload; deserializes `IngestionResult` response
-  - `list_entities()` — uses `ExcelColumnMetadata.GetColumns()` for ordered column display
+- Keep local data-entry tools in the single `DataEntryTools` class.
 - Registered in `Program.cs` via `WithToolsFromAssembly(typeof(DataEntryTools).Assembly)`
 - Resolves parsers from scoped DI using `IServiceProvider.CreateScope()`
-- All tools return string results (never throw on invalid input)
+- Tool methods return controlled string results instead of throwing for user-controlled input.
+- Derive entity and column information from the shared registry and metadata readers.
 
 ### SqlParserCS (SELECT-only gate)
 
@@ -121,14 +117,12 @@ if (statements[0] is not Statement.Select) fail;
 - First sheet only, header row skipped (row 1), column positions from `[ExcelColumn]` metadata
 - Parsers return `(IList Records, List<string> Errors)` — never throws on bad data
 - Shared `ExcelColumnMetadata.ValidateRequired()` checks `[ExcelColumn(Required = true)]` fields before row-level parsing
-- IngestionController uses inner try-catch for malformed workbooks (structured 400) and outer try-catch for unexpected failures (structured 500)
-- UnprocessableEntity (422) returned when workbook parses but contains validation errors; no records inserted
+- Keep machine ingestion structured and atomic; validation failures must insert no records.
 
 ### Multi-Provider DB
 
-- Configured via `Storage:Provider` in `appsettings.json`
-- Supported: `"sqlserver"`, `"sqlite"`, `"postgresql"`
-- Provider switch in `Program.cs` using `UseSqlServer` / `UseSqlite` / `UseNpgsql`
+- Keep provider selection centralized in the ASP.NET host's `Program.cs`.
+- Do not introduce provider-specific behavior into the shared library.
 
 ### Entity Registry
 
