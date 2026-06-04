@@ -16,3 +16,9 @@ approval_mode = "approve"
 
 [mcp_servers.code-memory.tools.get_edit_context]
 approval_mode = "approve"
+
+[mcp_servers.code-memory.tools.get_repository_root]
+approval_mode = "approve"
+
+[mcp_servers.code-memory.tools.rescan_repository]
+approval_mode = "approve"

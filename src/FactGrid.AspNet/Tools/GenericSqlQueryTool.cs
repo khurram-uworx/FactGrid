@@ -3,7 +3,6 @@ using FactGrid.AspNet.Services;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
-using System.Reflection;
 using System.Text;
 
 namespace FactGrid.AspNet.Tools;
@@ -11,15 +10,17 @@ namespace FactGrid.AspNet.Tools;
 [McpServerToolType]
 public class GenericSqlQueryTool
 {
-    private readonly QueryValidationService _validator;
-    private readonly IServiceProvider _serviceProvider;
-    private readonly IEntityContextAccessor _entityContext;
+    readonly QueryValidationService _validator;
+    readonly IServiceProvider _serviceProvider;
+    readonly IEntityContextAccessor _entityContext;
+    readonly EntityRegistry _registry;
 
-    public GenericSqlQueryTool(QueryValidationService validator, IServiceProvider serviceProvider, IEntityContextAccessor entityContext)
+    public GenericSqlQueryTool(QueryValidationService validator, IServiceProvider serviceProvider, IEntityContextAccessor entityContext, EntityRegistry registry)
     {
         _validator = validator;
         _serviceProvider = serviceProvider;
         _entityContext = entityContext;
+        _registry = registry;
     }
 
     [McpServerTool, Description(@"
@@ -32,13 +33,21 @@ Use the DescribeAsync tool to see the entity schema.")]
         [Description("Maximum number of rows to return (default 100, max 10000)")] int maxResults = 100)
     {
         var entity = _entityContext.CurrentEntity;
-        if (entity is null) return "Error: No entity context available. Use /api/mcp/{entityName} endpoint.";
 
         var (isValid, error) = _validator.Validate(query);
         if (!isValid) return $"Error: {error}";
 
-        var (isScoped, scopeError) = _validator.ValidateScoped(query, entity.TableName);
-        if (!isScoped) return $"Error: {scopeError}";
+        if (entity is not null)
+        {
+            var (isScoped, scopeError) = _validator.ValidateScoped(query, entity.TableName);
+            if (!isScoped) return $"Error: {scopeError}";
+        }
+        else
+        {
+            var allowedTables = _registry.GetAll().Select(e => e.TableName);
+            var (isAllowed, allowError) = _validator.ValidateTables(query, allowedTables);
+            if (!isAllowed) return $"Error: {allowError}";
+        }
 
         maxResults = Math.Clamp(maxResults, 1, 10000);
 
@@ -82,38 +91,29 @@ Use the DescribeAsync tool to see the entity schema.")]
         return sb.ToString();
     }
 
-    [McpServerTool, Description("Describe the current entity schema, including column names, types, and descriptions.")]
+    [McpServerTool, Description("Describe entity schema(s). In global mode, shows all entities. In scoped mode, shows only the current entity's schema.")]
     public Task<string> DescribeAsync()
     {
         var entity = _entityContext.CurrentEntity;
-        if (entity is null)
-            return Task.FromResult("Error: No entity context available. Use /api/mcp/{entityName} endpoint.");
 
-        var props = entity.ModelType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+        var entities = entity is not null
+            ? (IEnumerable<EntityRegistration>)[entity]
+            : _registry.GetAll();
 
         var sb = new StringBuilder();
-        sb.AppendLine($"# {entity.DisplayName} ({entity.TableName})");
-        sb.AppendLine();
-        sb.AppendLine(entity.Description);
-        sb.AppendLine();
-        sb.AppendLine("| Column | Type | Description |");
-        sb.AppendLine("|--------|------|-------------|");
-
-        foreach (var prop in props)
+        foreach (var ent in entities)
         {
-            if (prop.Name == "Id") continue;
-            var desc = prop.GetCustomAttribute<DescriptionAttribute>()?.Description ?? "";
-            var colType = prop.PropertyType switch
-            {
-                Type t when t == typeof(string) => "NVARCHAR",
-                Type t when t == typeof(int) => "INT",
-                Type t when t == typeof(decimal) => "DECIMAL(10,2)",
-                Type t when t == typeof(DateOnly) => "DATE",
-                Type t when t == typeof(DateTime) => "DATE",
-                Type t when t == typeof(bool) => "BIT",
-                _ => prop.PropertyType.Name
-            };
-            sb.AppendLine($"| {prop.Name} | {colType} | {desc} |");
+            sb.AppendLine($"# {ent.DisplayName} ({ent.TableName})");
+            sb.AppendLine();
+            sb.AppendLine(ent.Description);
+            sb.AppendLine();
+            sb.AppendLine("| Column | Type | Description |");
+            sb.AppendLine("|--------|------|-------------|");
+
+            foreach (var col in EntitySchemaHelper.GetColumns(ent.ModelType))
+                sb.AppendLine($"| {col.Name} | {col.Type} | {col.Description} |");
+
+            sb.AppendLine();
         }
 
         return Task.FromResult(sb.ToString());

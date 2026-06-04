@@ -29,4 +29,8 @@
     <Folder Include="App_Data\" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="FactGrid.Tests" />
+  </ItemGroup>
+
 </Project>
