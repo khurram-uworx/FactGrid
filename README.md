@@ -1,10 +1,10 @@
-# EfMcp
+# FactGrid
 
 Entity Framework + Streamable HTTP MCP
 
 ## Overview
 
-EfMcp is an ASP.NET Core MVC application that bridges Entity Framework and [Streamable HTTP MCP](https://github.com/streamable/streamable-http-mcp). It allows you to upload Excel files, store each row in a corresponding EF table, and query that data via an MCP endpoint.
+FactGrid is an ASP.NET Core MVC application that bridges Entity Framework and Streamable HTTP MCP. It allows you to upload Excel files, store each row in a corresponding EF table, and query that data via an MCP endpoint.
 
 **Key features:**
 - Upload Excel files via web UI; each row maps 1:1 to an Entity Framework entity
@@ -26,9 +26,9 @@ Proof of concept. The first entity/Excel format is TBD and will be documented se
 ### Quick Start
 
 ```bash
-git clone https://github.com/khurram-uworx/EfMcp
-cd EfMcp
-dotnet run --project src/EfMcp.AspNet
+git clone https://github.com/khurram-uworx/FactGrid
+cd FactGrid
+dotnet run --project src/FactGrid.AspNet
 ```
 
 Set the connection string in `appsettings.json` or via `-ConnectionStrings:DefaultConnection`.
@@ -36,8 +36,8 @@ Set the connection string in `appsettings.json` or via `-ConnectionStrings:Defau
 ### Docker
 
 ```bash
-docker build -f src/EfMcp.AspNet/Dockerfile -t efmcp .
-docker run -p 8080:8080 efmcp
+docker build -f src/FactGrid.AspNet/Dockerfile -t factgrid .
+docker run -p 8080:8080 factgrid
 ```
 
 ## Usage
@@ -82,24 +82,6 @@ Excel File → Web UI → EF Core → SQL Server
 2. Add a `DbSet<T>` to `ApplicationDbContext`
 3. Create a migration: `dotnet ef migrations add Add{Entity}`
 4. The MCP endpoint and upload UI are auto-wired by convention
-
-## Project Structure
-
-```
-EfMcp/
-├── src/
-│   └── EfMcp.AspNet/        # MVC web app
-│       ├── Controllers/       # Home + MCP controllers
-│       ├── Data/              # DbContext, migrations
-│       ├── Models/            # EF entities + view models
-│       ├── Views/             # Razor views
-│       └── Program.cs         # App startup
-├── tests/
-│   └── EfMcp.Tests/          # Unit tests
-├── docs/                     # ADRs and task templates
-├── EfMcp.slnx                # Solution file
-└── AGENTS.md                 # AI agent guidance
-```
 
 ## License
 

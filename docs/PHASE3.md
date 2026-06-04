@@ -2,7 +2,7 @@
 
 ## Goal
 
-Enable two separate MCP hosts sharing the same tool classes from `EfMcp.Mcp` — a **local/stdio MCP** for coding agents (opencode, Copilot, etc.) to read Excel files and push data, and a **web/remote MCP** for web AI (ChatGPT, etc.) to query reports and uploaded data.
+Enable two separate MCP hosts sharing the same tool classes from `FactGrid.Mcp` — a **local/stdio MCP** for coding agents (opencode, Copilot, etc.) to read Excel files and push data, and a **web/remote MCP** for web AI (ChatGPT, etc.) to query reports and uploaded data.
 
 ## Architecture
 
@@ -17,9 +17,9 @@ Enable two separate MCP hosts sharing the same tool classes from `EfMcp.Mcp` —
                            │
                            ▼
 ┌──────────────────────────────────────────────────────────────┐
-│              Local/stdio MCP (EfMcp.Mcp.Host.Console)       │
+│              Local/stdio MCP (FactGrid.Mcp.Host.Console)       │
 │                                                              │
-│  Tools from EfMcp.Mcp:                                       │
+│  Tools from FactGrid.Mcp:                                       │
 │    - read_excel(filePath) → parse + preview                  │
 │    - push_data(entityName, rows) → HTTP POST to org server   │
 │    - list_entities() → available entity types                │
@@ -29,13 +29,13 @@ Enable two separate MCP hosts sharing the same tool classes from `EfMcp.Mcp` —
                            │  HTTPS
                            ▼
 ┌──────────────────────────────────────────────────────────────┐
-│              Organization Server (EfMcp.AspNet)              │
+│              Organization Server (FactGrid.AspNet)              │
 │                                                              │
 │  ┌──────────────────┐   ┌──────────────────────────────┐    │
 │  │  Web UI           │   │  Web/remote MCP             │    │
 │  │  /Worklogs        │   │  /api/mcp/{entityName}      │    │
 │  │  upload + manage  │   │                              │    │
-│  └──────────────────┘   │  Tools from EfMcp.Mcp:       │    │
+│  └──────────────────┘   │  Tools from FactGrid.Mcp:       │    │
 │                          │    - sql_query(SELECT)       │    │
 │  ┌──────────────────┐   │    - describe()              │    │
 │  │  Database         │   │    - list_entities()         │    │
@@ -55,7 +55,7 @@ Enable two separate MCP hosts sharing the same tool classes from `EfMcp.Mcp` —
 
 ## Components
 
-### 1. `EfMcp.Mcp` — Shared Tool Library (already exists after Phase 1)
+### 1. `FactGrid.Mcp` — Shared Tool Library (already exists after Phase 1)
 
 Contains:
 - `QueryValidationService` — SqlParserCS SELECT-only gate
@@ -64,11 +64,11 @@ Contains:
 
 **Key design principle:** Tools depend only on abstractions, not on ASP.NET or console intrinsics. Both hosts inject their own service implementations.
 
-### 2. `EfMcp.Mcp.Host.Console` — Local/stdio MCP [NEW]
+### 2. `FactGrid.Mcp.Host.Console` — Local/stdio MCP [NEW]
 
 A .NET console app that:
 - Uses `ModelContextProtocol.Protocol.Transport.StdioServerTransport` for stdio transport
-- Loads the same tool assembly from `EfMcp.Mcp`
+- Loads the same tool assembly from `FactGrid.Mcp`
 - Injects a **file-system-backed** data service:
   - `read_excel(filePath)` — reads local `.xlsx`, parses with the registered `IExcelParser<T>`, returns preview as markdown
   - `push_data(entityName)` — sends parsed data to the organization server via HTTP
@@ -78,7 +78,7 @@ A .NET console app that:
 - `CodeMemory.Mcp/Program.cs` — stdio MCP server setup with `WithToolsFromAssembly()`
 - `CodeMemory.Mcp/Tools/McpTools.cs` — Ping tool pattern (simple tools that don't need DB)
 
-### 3. `EfMcp.AspNet` — Organization Server (exists)
+### 3. `FactGrid.AspNet` — Organization Server (exists)
 
 Already hosts:
 - Web UI for upload + data management
@@ -126,10 +126,10 @@ Web AI / Chat:
 
 ## Migration Path from Phase 2
 
-1. Create `EfMcp.Mcp.Host.Console` project with stdio transport
-2. Extract EF Core data access behind an interface in `EfMcp.Mcp`:
+1. Create `FactGrid.Mcp.Host.Console` project with stdio transport
+2. Extract EF Core data access behind an interface in `FactGrid.Mcp`:
    - Both ASP.NET host and console host implement the interface
-3. Add `read_excel` and `push_data` tools to `EfMcp.Mcp`
+3. Add `read_excel` and `push_data` tools to `FactGrid.Mcp`
 4. Add data ingestion endpoint to the ASP.NET server
 5. Add report tools
 

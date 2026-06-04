@@ -287,11 +287,11 @@ public static class EntityPrompts
 
 | File | Change |
 |---|---|
-| `src/EfMcp.AspNet/Tools/GenericSqlQueryTool.cs` | Add scoped SQL validation, global describe mode |
-| `src/EfMcp.AspNet/Tools/EntityResources.cs` | **New** — MCP resource methods |
-| `src/EfMcp.AspNet/Tools/EntityPrompts.cs` | **New** — MCP prompt methods |
-| `src/EfMcp.AspNet/Program.cs` | Add `/api/mcp` route, register resources + prompts assemblies |
-| `tests/EfMcp.Tests/GenericSqlQueryToolTests.cs` | Add tests for scoped validation, global describe |
+| `src/FactGrid.AspNet/Tools/GenericSqlQueryTool.cs` | Add scoped SQL validation, global describe mode |
+| `src/FactGrid.AspNet/Tools/EntityResources.cs` | **New** — MCP resource methods |
+| `src/FactGrid.AspNet/Tools/EntityPrompts.cs` | **New** — MCP prompt methods |
+| `src/FactGrid.AspNet/Program.cs` | Add `/api/mcp` route, register resources + prompts assemblies |
+| `tests/FactGrid.Tests/GenericSqlQueryToolTests.cs` | Add tests for scoped validation, global describe |
 | `docs/GETTING-STARTED.md` | **New** — Project onboarding guide (after implementation) |
 
 ## Estimated Scope

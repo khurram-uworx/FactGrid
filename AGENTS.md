@@ -1,8 +1,8 @@
-# EfMcp — AGENTS.md
+# FactGrid— AGENTS.md
 
 ## Purpose
 
-Engineering constraints and implementation guidance for AI coding agents contributing to EfMcp.
+Engineering constraints and implementation guidance for AI coding agents contributing to FactGrid.
 
 **First read [README.md](README.md)** for the project overview, quick start, and tool reference.
 
@@ -10,19 +10,19 @@ Engineering constraints and implementation guidance for AI coding agents contrib
 
 ## GitHub
 
-- **Repo:** `khurram-uworx/EfMcp`
-- All `gh` commands require `--repo khurram-uworx/EfMcp`
+- **Repo:** `khurram-uworx/FactGrid`
+- All `gh` commands require `--repo khurram-uworx/FactGrid`
 
 ---
 
 ## Build / Run / Test
 
 ```bash
-dotnet build src/EfMcp.AspNet
-dotnet run --project src/EfMcp.AspNet
-dotnet test tests/EfMcp.Tests
-dotnet ef migrations add <Name> --project src/EfMcp.AspNet
-dotnet ef database update --project src/EfMcp.AspNet
+dotnet build src/FactGrid.AspNet
+dotnet run --project src/FactGrid.AspNet
+dotnet test tests/FactGrid.Tests
+dotnet ef migrations add <Name> --project src/FactGrid.AspNet
+dotnet ef database update --project src/FactGrid.AspNet
 ```
 
 ---
@@ -30,8 +30,8 @@ dotnet ef database update --project src/EfMcp.AspNet
 ## Project Structure
 
 ```
-EfMcp/
-├── src/EfMcp.AspNet/           # ASP.NET MVC web app (net10.0)
+FactGrid/
+├── src/FactGrid.AspNet/           # ASP.NET MVC web app (net10.0)
 │   ├── Controllers/             # MVC controllers
 │   ├── Data/                    # DbContext + EF migrations
 │   ├── Models/                  # EF entity classes with [Description]
@@ -39,7 +39,7 @@ EfMcp/
 │   ├── Tools/                   # MCP tool classes ([McpServerToolType])
 │   ├── Views/                   # Razor views
 │   └── Program.cs               # Startup — DI, MCP server, middleware
-├── tests/EfMcp.Tests/           # NUnit tests
+├── tests/FactGrid.Tests/           # NUnit tests
 ├── docs/                        # Phase plans, ADRs, task templates
 └── AGENTS.md                    # ← you are here
 ```

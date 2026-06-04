@@ -330,4 +330,4 @@ FodyWeavers.xsd
 .codememory/
 .codememory.json
 
-/src/EfMcp.AspNet/App_Data
+/src/FactGrid.AspNet/App_Data

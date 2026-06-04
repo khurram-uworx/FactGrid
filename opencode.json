@@ -21,6 +21,10 @@
         "-y",
         "@uworx/code-memory"
       ]
+    },
+    "worklogs": {
+      "type": "remote",
+      "url": "http://localhost:4792/api/mcp/worklogs"
     }
   }
 }
