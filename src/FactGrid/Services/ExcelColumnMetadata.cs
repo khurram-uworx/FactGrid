@@ -23,23 +23,12 @@ public static class ExcelColumnMetadata
 
     public static void Validate(Type modelType)
     {
-        var columns = GetColumns(modelType);
-
-        var invalid = columns.FirstOrDefault(c => c.Position <= 0);
-        if (invalid is not null)
-            throw new InvalidOperationException(
-                $"ExcelColumn position {invalid.Position} on {modelType.Name}.{invalid.Property.Name} must be positive.");
-
-        var dupes = columns.GroupBy(c => c.Position).FirstOrDefault(g => g.Count() > 1);
-        if (dupes is not null)
-            throw new InvalidOperationException(
-                $"Duplicate ExcelColumn position {dupes.Key} on {modelType.Name}.");
+        GetColumns(modelType);
     }
 
     public static List<string> ValidateRequired(Type modelType, IReadOnlyDictionary<string, string> cellTexts, int rowNumber)
     {
         var errors = new List<string>();
-        var index = GetColumnIndex(modelType);
         foreach (var col in GetColumns(modelType).Where(c => c.Attr.Required))
         {
             if (string.IsNullOrWhiteSpace(cellTexts[col.Property.Name]))
@@ -50,11 +39,23 @@ public static class ExcelColumnMetadata
 
     static IReadOnlyList<ColumnInfo> BuildColumns(Type modelType)
     {
-        return modelType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+        var columns = modelType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Select(p => (Prop: p, Attr: p.GetCustomAttribute<ExcelColumnAttribute>()))
             .Where(x => x.Attr is not null)
             .Select(x => new ColumnInfo(x.Attr!.Position, x.Prop, x.Attr))
             .OrderBy(x => x.Position)
             .ToList();
+
+        var invalid = columns.FirstOrDefault(c => c.Position <= 0);
+        if (invalid is not null)
+            throw new InvalidOperationException(
+                $"ExcelColumn position {invalid.Position} on {modelType.Name}.{invalid.Property.Name} must be positive.");
+
+        var dupes = columns.GroupBy(c => c.Position).FirstOrDefault(g => g.Count() > 1);
+        if (dupes is not null)
+            throw new InvalidOperationException(
+                $"Duplicate ExcelColumn position {dupes.Key} on {modelType.Name}.");
+
+        return columns;
     }
 }

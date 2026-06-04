@@ -81,7 +81,7 @@ Do not reinvent infrastructure. Prefer existing .NET and ecosystem primitives ov
 - **EntityRegistry**: Singleton runtime registry. Populated by `AddFactGridEntities()` in `ServiceCollectionExtensions`
 - **FactGridEntityCatalog**: Static class listing all supported entity definitions (names, types, parser types, table names)
 - **EntitySchemaHelper**: Builds structured schema metadata from entity models
-- **ServiceCollectionExtensions**: `AddFactGridEntities()` — registers registry, template generator, all parsers, and `IEntityTableService<>` open-generic
+- **ServiceCollectionExtensions**: `AddFactGridEntities()` — registers registry, template generator, and all parsers. `IEntityTableService<>` open-generic is registered by the ASP.NET host in `Program.cs`.
 
 ### MCP Tools — Central HTTP (`FactGrid.AspNet`)
 

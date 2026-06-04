@@ -25,12 +25,12 @@ public class Worklog
 
     [Column(TypeName = "date")]
     [Description("Date the work was performed")]
-    [ExcelColumn(4, "Work Date", Required = true, Example = "2024-12-25")]
+    [ExcelColumn(4, "Work Date", Required = true, Example = "2024-12-25", Format = "yyyy-mm-dd")]
     public DateOnly WorkDate { get; set; }
 
     [Column(TypeName = "decimal(10,2)")]
     [Description("Number of hours worked")]
-    [ExcelColumn(5, "Hours", Required = true, Example = 8.0)]
+    [ExcelColumn(5, "Hours", Required = true, Example = 8.0, Format = "0.00")]
     public decimal Hours { get; set; }
 
     [MaxLength(50)]
@@ -60,12 +60,12 @@ public class Expense
 
     [Column(TypeName = "decimal(10,2)")]
     [Description("Expense amount in dollars")]
-    [ExcelColumn(4, "Amount", Required = true, Example = 450.00)]
+    [ExcelColumn(4, "Amount", Required = true, Example = 450.00, Format = "0.00")]
     public decimal Amount { get; set; }
 
     [Column(TypeName = "date")]
     [Description("Date the expense was incurred")]
-    [ExcelColumn(5, "Expense Date", Required = true, Example = "2025-03-15")]
+    [ExcelColumn(5, "Expense Date", Required = true, Example = "2025-03-15", Format = "yyyy-mm-dd")]
     public DateOnly ExpenseDate { get; set; }
 
     [MaxLength(50)]

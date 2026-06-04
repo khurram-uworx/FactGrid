@@ -34,7 +34,10 @@ public class ExcelTemplateGenerator
             {
                 var exampleCell = sheet.Cell($"{colLetter}2");
                 SetTypedCellValue(exampleCell, col.Attr.Example);
-                ApplyNumberFormat(exampleCell, col.Property.PropertyType);
+                if (!string.IsNullOrEmpty(col.Attr.Format))
+                    exampleCell.Style.NumberFormat.Format = col.Attr.Format;
+                else
+                    ApplyNumberFormat(exampleCell, col.Property.PropertyType);
             }
         }
 

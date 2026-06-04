@@ -260,6 +260,14 @@ public class ExcelColumnMetadataValidationTests
         [ExcelColumn(-1, "A")] public string A { get; set; } = "";
     }
 
+    class DummyParser : IExcelParser<DuplicatePositionEntity>
+    {
+        public (List<DuplicatePositionEntity> Records, List<string> Errors) Parse(Stream excelStream) =>
+            (new List<DuplicatePositionEntity>(), new List<string>());
+        (IList Records, List<string> Errors) IExcelParser.Parse(Stream excelStream) =>
+            (new List<DuplicatePositionEntity>(), new List<string>());
+    }
+
     [Test]
     public void GetColumns_ValidEntity_ReturnsOrdered()
     {
@@ -332,5 +340,64 @@ public class ExcelColumnMetadataValidationTests
 
         var errors = ExcelColumnMetadata.ValidateRequired(typeof(Worklog), cellTexts, 2);
         Assert.That(errors, Is.Empty);
+    }
+
+    // --- Production-path validation enforcement ---
+
+    [Test]
+    public void GetColumns_DuplicatePositions_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            ExcelColumnMetadata.GetColumns(typeof(DuplicatePositionEntity)));
+        Assert.That(ex!.Message, Does.Contain("Duplicate"));
+        Assert.That(ex.Message, Does.Contain("position 1"));
+    }
+
+    [Test]
+    public void GetColumns_ZeroPosition_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            ExcelColumnMetadata.GetColumns(typeof(NonPositiveEntity)));
+        Assert.That(ex!.Message, Does.Contain("must be positive"));
+    }
+
+    [Test]
+    public void GetColumns_NegativePosition_Throws()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            ExcelColumnMetadata.GetColumns(typeof(NegativePositionEntity)));
+        Assert.That(ex!.Message, Does.Contain("must be positive"));
+    }
+
+    [Test]
+    public void GetColumnIndex_DuplicatePositions_Throws()
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            ExcelColumnMetadata.GetColumnIndex(typeof(DuplicatePositionEntity)));
+    }
+
+    [Test]
+    public void GetColumnIndex_NonPositivePosition_Throws()
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            ExcelColumnMetadata.GetColumnIndex(typeof(NonPositiveEntity)));
+    }
+
+    [Test]
+    public void ExcelTemplateGenerator_InvalidMetadata_ThrowsViaGetColumns()
+    {
+        var registry = new EntityRegistry();
+        registry.Register<DuplicatePositionEntity>(new EntityRegistration(
+            EntityName: "bad",
+            DisplayName: "Bad",
+            ModelType: typeof(DuplicatePositionEntity),
+            ExcelParserType: typeof(DummyParser),
+            TableName: "Bad",
+            Description: "Entity with duplicate positions"
+        ));
+
+        var generator = new ExcelTemplateGenerator(registry);
+        Assert.Throws<InvalidOperationException>(() =>
+            generator.Generate("bad", "test.xlsx"));
     }
 }

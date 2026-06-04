@@ -3,6 +3,9 @@ using FactGrid.Mcp.Tools;
 using FactGrid.Models;
 using FactGrid.Services;
 using Microsoft.Extensions.DependencyInjection;
+using System.Net;
+using System.Text;
+using System.Text.Json;
 
 namespace FactGrid.Tests;
 
@@ -12,11 +15,29 @@ public class DataEntryToolsMcpTests
     static EntityRegistry _registry = null!;
     static ExcelTemplateGenerator _generator = null!;
     static ServiceProvider _serviceProvider = null!;
-    static StubHttpClientFactory _httpFactory = null!;
+    static MockHttpClientFactory _httpFactory = null!;
 
-    class StubHttpClientFactory : IHttpClientFactory
+    class MockHttpMessageHandler : HttpMessageHandler
     {
-        public HttpClient CreateClient(string name) => new();
+        public Func<HttpRequestMessage, HttpResponseMessage>? SendAsyncFunc { get; set; }
+        public HttpRequestMessage? LastRequest { get; set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            LastRequest = request;
+            if (SendAsyncFunc is not null)
+                return Task.FromResult(SendAsyncFunc(request));
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(new IngestionResult { Success = true, InsertedCount = 5, Errors = [] }), Encoding.UTF8, "application/json")
+            });
+        }
+    }
+
+    class MockHttpClientFactory : IHttpClientFactory
+    {
+        public MockHttpMessageHandler Handler { get; } = new();
+        public HttpClient CreateClient(string name) => new(Handler);
     }
 
     [OneTimeSetUp]
@@ -47,7 +68,14 @@ public class DataEntryToolsMcpTests
         services.AddScoped<IExcelParser<Expense>, ExpensesExcelParser>();
         _serviceProvider = services.BuildServiceProvider();
 
-        _httpFactory = new StubHttpClientFactory();
+        _httpFactory = new MockHttpClientFactory();
+    }
+
+    [SetUp]
+    public void SetUp()
+    {
+        _httpFactory.Handler.SendAsyncFunc = null;
+        _httpFactory.Handler.LastRequest = null;
     }
 
     [OneTimeTearDown]
@@ -264,6 +292,16 @@ public class DataEntryToolsMcpTests
         }
     }
 
+    [Test]
+    public void GenerateTemplate_InvalidPath_ReturnsFileError()
+    {
+        var tools = CreateTools();
+        var badPath = Path.Combine(Path.GetTempPath(), "invalid|chars?are*bad.xlsx");
+        var result = tools.GenerateTemplate("worklogs", badPath);
+        Assert.That(result, Does.Contain("Error:"));
+        Assert.That(result, Does.Contain("write"));
+    }
+
     // ── upload_excel ───────────────────────────────────────────────
 
     [Test]
@@ -305,17 +343,28 @@ public class DataEntryToolsMcpTests
     [Test]
     public async Task UploadExcel_MalformedWorkbook_DoesNotCrash()
     {
-        var tools = CreateTools();
-        var tempPath = Path.GetTempFileName() + ".xlsx";
+        var prior = Environment.GetEnvironmentVariable("FACTGRID_SERVER_URL");
+        Environment.SetEnvironmentVariable("FACTGRID_SERVER_URL", "http://localhost:5000");
+
         try
         {
-            File.WriteAllBytes(tempPath, [0, 1, 2, 3, 4, 5]);
-            var result = await tools.UploadExcelAsync("worklogs", tempPath);
-            Assert.That(result, Does.Contain("Error:"));
+            var tools = CreateTools();
+            var tempPath = Path.GetTempFileName() + ".xlsx";
+            try
+            {
+                File.WriteAllBytes(tempPath, [0, 1, 2, 3, 4, 5]);
+                var result = await tools.UploadExcelAsync("worklogs", tempPath);
+                Assert.That(result, Does.Contain("Error:"));
+                Assert.That(result, Does.Contain("parse"));
+            }
+            finally
+            {
+                if (File.Exists(tempPath)) File.Delete(tempPath);
+            }
         }
         finally
         {
-            if (File.Exists(tempPath)) File.Delete(tempPath);
+            Environment.SetEnvironmentVariable("FACTGRID_SERVER_URL", prior);
         }
     }
 
@@ -345,6 +394,303 @@ public class DataEntryToolsMcpTests
                 Assert.That(result, Does.Contain("Error:"));
                 Assert.That(result, Does.Contain("FACTGRID_SERVER_URL"));
                 Assert.That(result, Does.Contain("not set"));
+            }
+            finally
+            {
+                if (File.Exists(tempPath)) File.Delete(tempPath);
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("FACTGRID_SERVER_URL", prior);
+        }
+    }
+
+    [Test]
+    public async Task UploadExcel_MalformedUrl_ReturnsError()
+    {
+        var prior = Environment.GetEnvironmentVariable("FACTGRID_SERVER_URL");
+        Environment.SetEnvironmentVariable("FACTGRID_SERVER_URL", "not-a-url");
+
+        try
+        {
+            var tools = CreateTools();
+            var tempPath = Path.GetTempFileName() + ".xlsx";
+            try
+            {
+                File.WriteAllBytes(tempPath, CreateWorklogExcel(sheet =>
+                {
+                    sheet.Cell(2, 1).Value = "Alice";
+                    sheet.Cell(2, 2).Value = "Alpha";
+                    sheet.Cell(2, 4).Value = "6/1/2025 12:00:00 AM";
+                    sheet.Cell(2, 5).Value = "8";
+                    sheet.Cell(2, 6).Value = "Approved";
+                }).ToArray());
+
+                var result = await tools.UploadExcelAsync("worklogs", tempPath);
+                Assert.That(result, Does.Contain("Error:"));
+                Assert.That(result, Does.Contain("FACTGRID_SERVER_URL"));
+                Assert.That(result, Does.Not.Contain("localhost"));
+            }
+            finally
+            {
+                if (File.Exists(tempPath)) File.Delete(tempPath);
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("FACTGRID_SERVER_URL", prior);
+        }
+    }
+
+    [Test]
+    public async Task UploadExcel_FtpUrl_ReturnsError()
+    {
+        var prior = Environment.GetEnvironmentVariable("FACTGRID_SERVER_URL");
+        Environment.SetEnvironmentVariable("FACTGRID_SERVER_URL", "ftp://files.example.com");
+
+        try
+        {
+            var tools = CreateTools();
+            var tempPath = Path.GetTempFileName() + ".xlsx";
+            try
+            {
+                File.WriteAllBytes(tempPath, CreateWorklogExcel(sheet =>
+                {
+                    sheet.Cell(2, 1).Value = "Alice";
+                    sheet.Cell(2, 2).Value = "Alpha";
+                    sheet.Cell(2, 4).Value = "6/1/2025 12:00:00 AM";
+                    sheet.Cell(2, 5).Value = "8";
+                    sheet.Cell(2, 6).Value = "Approved";
+                }).ToArray());
+
+                var result = await tools.UploadExcelAsync("worklogs", tempPath);
+                Assert.That(result, Does.Contain("Error:"));
+                Assert.That(result, Does.Contain("HTTP or HTTPS"));
+            }
+            finally
+            {
+                if (File.Exists(tempPath)) File.Delete(tempPath);
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("FACTGRID_SERVER_URL", prior);
+        }
+    }
+
+    [Test]
+    public async Task UploadExcel_TransportFailure_ReturnsError()
+    {
+        _httpFactory.Handler.SendAsyncFunc = _ => throw new HttpRequestException("Connection refused");
+
+        var prior = Environment.GetEnvironmentVariable("FACTGRID_SERVER_URL");
+        Environment.SetEnvironmentVariable("FACTGRID_SERVER_URL", "http://localhost:1");
+
+        try
+        {
+            var tools = CreateTools();
+            var tempPath = Path.GetTempFileName() + ".xlsx";
+            try
+            {
+                File.WriteAllBytes(tempPath, CreateWorklogExcel(sheet =>
+                {
+                    sheet.Cell(2, 1).Value = "Alice";
+                    sheet.Cell(2, 2).Value = "Alpha";
+                    sheet.Cell(2, 4).Value = "6/1/2025 12:00:00 AM";
+                    sheet.Cell(2, 5).Value = "8";
+                    sheet.Cell(2, 6).Value = "Approved";
+                }).ToArray());
+
+                var result = await tools.UploadExcelAsync("worklogs", tempPath);
+                Assert.That(result, Does.Contain("Error:"));
+                Assert.That(result, Does.Contain("Connection refused"));
+            }
+            finally
+            {
+                if (File.Exists(tempPath)) File.Delete(tempPath);
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("FACTGRID_SERVER_URL", prior);
+        }
+    }
+
+    [Test]
+    public async Task UploadExcel_ServerSuccess_ReturnsResultSummary()
+    {
+        _httpFactory.Handler.SendAsyncFunc = req =>
+        {
+            Assert.That(req.RequestUri!.AbsolutePath, Does.EndWith("/api/ingestion/worklogs/upload"));
+            Assert.That(req.Method, Is.EqualTo(HttpMethod.Post));
+            Assert.That(req.Content, Is.TypeOf<MultipartFormDataContent>());
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    JsonSerializer.Serialize(new IngestionResult { Success = true, InsertedCount = 3, Errors = [] }),
+                    Encoding.UTF8, "application/json")
+            };
+        };
+
+        var prior = Environment.GetEnvironmentVariable("FACTGRID_SERVER_URL");
+        Environment.SetEnvironmentVariable("FACTGRID_SERVER_URL", "http://localhost:5000");
+
+        try
+        {
+            var tools = CreateTools();
+            var tempPath = Path.GetTempFileName() + ".xlsx";
+            try
+            {
+                File.WriteAllBytes(tempPath, CreateWorklogExcel(sheet =>
+                {
+                    sheet.Cell(2, 1).Value = "Alice";
+                    sheet.Cell(2, 4).Value = "6/1/2025 12:00:00 AM";
+                    sheet.Cell(2, 5).Value = "8";
+                    sheet.Cell(2, 6).Value = "Approved";
+                }).ToArray());
+
+                var result = await tools.UploadExcelAsync("worklogs", tempPath);
+
+                Assert.That(result, Does.Contain("status 200"));
+                Assert.That(result, Does.Contain("Success: True"));
+                Assert.That(result, Does.Contain("Records inserted: 3"));
+            }
+            finally
+            {
+                if (File.Exists(tempPath)) File.Delete(tempPath);
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("FACTGRID_SERVER_URL", prior);
+        }
+    }
+
+    [Test]
+    public async Task UploadExcel_ServerValidationError_ReturnsStructuredResult()
+    {
+        _httpFactory.Handler.SendAsyncFunc = _ => new HttpResponseMessage(HttpStatusCode.UnprocessableEntity)
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(new IngestionResult { Success = false, InsertedCount = 0, Errors = ["Row 2: Amount is required", "Row 3: Invalid date"] }),
+                Encoding.UTF8, "application/json")
+        };
+
+        var prior = Environment.GetEnvironmentVariable("FACTGRID_SERVER_URL");
+        Environment.SetEnvironmentVariable("FACTGRID_SERVER_URL", "http://localhost:5000");
+
+        try
+        {
+            var tools = CreateTools();
+            var tempPath = Path.GetTempFileName() + ".xlsx";
+            try
+            {
+                File.WriteAllBytes(tempPath, CreateWorklogExcel(sheet =>
+                {
+                    sheet.Cell(2, 1).Value = "Alice";
+                    sheet.Cell(2, 4).Value = "6/1/2025 12:00:00 AM";
+                    sheet.Cell(2, 5).Value = "8";
+                    sheet.Cell(2, 6).Value = "Approved";
+                }).ToArray());
+
+                var result = await tools.UploadExcelAsync("worklogs", tempPath);
+
+                Assert.That(result, Does.Contain("status 422"));
+                Assert.That(result, Does.Contain("Success: False"));
+                Assert.That(result, Does.Contain("Records inserted: 0"));
+                Assert.That(result, Does.Contain("Amount is required"));
+                Assert.That(result, Does.Contain("Invalid date"));
+            }
+            finally
+            {
+                if (File.Exists(tempPath)) File.Delete(tempPath);
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("FACTGRID_SERVER_URL", prior);
+        }
+    }
+
+    [Test]
+    public async Task UploadExcel_MalformedJsonResponse_ReturnsRawBody()
+    {
+        _httpFactory.Handler.SendAsyncFunc = _ => new HttpResponseMessage(HttpStatusCode.InternalServerError)
+        {
+            Content = new StringContent("<html>server error</html>", Encoding.UTF8, "text/html")
+        };
+
+        var prior = Environment.GetEnvironmentVariable("FACTGRID_SERVER_URL");
+        Environment.SetEnvironmentVariable("FACTGRID_SERVER_URL", "http://localhost:5000");
+
+        try
+        {
+            var tools = CreateTools();
+            var tempPath = Path.GetTempFileName() + ".xlsx";
+            try
+            {
+                File.WriteAllBytes(tempPath, CreateWorklogExcel(sheet =>
+                {
+                    sheet.Cell(2, 1).Value = "Alice";
+                    sheet.Cell(2, 4).Value = "6/1/2025 12:00:00 AM";
+                    sheet.Cell(2, 5).Value = "8";
+                    sheet.Cell(2, 6).Value = "Approved";
+                }).ToArray());
+
+                var result = await tools.UploadExcelAsync("worklogs", tempPath);
+
+                Assert.That(result, Does.Contain("status 500"));
+                Assert.That(result, Does.Contain("<html>server error</html>"));
+            }
+            finally
+            {
+                if (File.Exists(tempPath)) File.Delete(tempPath);
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("FACTGRID_SERVER_URL", prior);
+        }
+    }
+
+    [Test]
+    public async Task UploadExcel_UploadUrlNormalizedCorrectly()
+    {
+        HttpResponseMessage? captured = null;
+        _httpFactory.Handler.SendAsyncFunc = req =>
+        {
+            captured = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    JsonSerializer.Serialize(new IngestionResult { Success = true, InsertedCount = 0, Errors = [] }),
+                    Encoding.UTF8, "application/json")
+            };
+            return captured;
+        };
+
+        var prior = Environment.GetEnvironmentVariable("FACTGRID_SERVER_URL");
+        Environment.SetEnvironmentVariable("FACTGRID_SERVER_URL", "http://localhost:5000/");
+
+        try
+        {
+            var tools = CreateTools();
+            var tempPath = Path.GetTempFileName() + ".xlsx";
+            try
+            {
+                File.WriteAllBytes(tempPath, CreateWorklogExcel(sheet =>
+                {
+                    sheet.Cell(2, 1).Value = "Alice";
+                    sheet.Cell(2, 4).Value = "6/1/2025 12:00:00 AM";
+                    sheet.Cell(2, 5).Value = "8";
+                    sheet.Cell(2, 6).Value = "Approved";
+                }).ToArray());
+
+                await tools.UploadExcelAsync("worklogs", tempPath);
+
+                Assert.That(_httpFactory.Handler.LastRequest, Is.Not.Null);
+                Assert.That(_httpFactory.Handler.LastRequest!.RequestUri!.AbsoluteUri,
+                    Is.EqualTo("http://localhost:5000/api/ingestion/worklogs/upload"));
             }
             finally
             {

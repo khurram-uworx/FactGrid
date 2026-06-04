@@ -1,6 +1,8 @@
 using ClosedXML.Excel;
 using FactGrid.AspNet.Data;
+using FactGrid.AspNet.Services;
 using FactGrid.Models;
+using FactGrid.Services;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -301,6 +303,73 @@ public class IngestionControllerTests
             Assert.That(root.TryGetProperty("insertedCount", out _), Is.True, $"{resp.StatusCode} lacks insertedCount");
             Assert.That(root.TryGetProperty("errors", out _), Is.True, $"{resp.StatusCode} lacks errors");
         }
+    }
+
+    class ThrowingEntityServiceFactory : IEntityServiceFactory
+    {
+        public IExcelParser CreateExcelParser(Type modelType) =>
+            throw new InvalidOperationException("Simulated DB failure — sensitive details");
+        public IEntityTableService CreateTableService(Type modelType) =>
+            throw new InvalidOperationException("Simulated DB failure — sensitive details");
+    }
+
+    [Test]
+    public async Task Upload_UnexpectedFactoryFailure_ReturnsStructured500()
+    {
+        using var connection = new SqliteConnection("Data Source=:memory:");
+        connection.Open();
+
+        using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    var descriptorsToRemove = services
+                        .Where(d => d.ServiceType == typeof(DbContextOptions<ApplicationDbContext>)
+                                    || d.ServiceType == typeof(ApplicationDbContext))
+                        .ToList();
+
+                    foreach (var d in descriptorsToRemove)
+                        services.Remove(d);
+
+                    services.AddDbContext<ApplicationDbContext>(options =>
+                        options.UseSqlite(connection));
+
+                    // Replace the real factory with a throwing one
+                    var factoryDesc = services.SingleOrDefault(d => d.ServiceType == typeof(IEntityServiceFactory));
+                    if (factoryDesc is not null)
+                        services.Remove(factoryDesc);
+                    services.AddScoped<IEntityServiceFactory>(_ => new ThrowingEntityServiceFactory());
+                });
+            });
+
+        using var client = factory.CreateClient();
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        db.Database.EnsureCreated();
+
+        var excel = CreateWorklogExcel(sheet =>
+        {
+            sheet.Cell(2, 1).Value = "Alice";
+            sheet.Cell(2, 2).Value = "Alpha";
+            sheet.Cell(2, 4).Value = "6/1/2025 12:00:00 AM";
+            sheet.Cell(2, 5).Value = "8";
+            sheet.Cell(2, 6).Value = "Approved";
+        });
+
+        var response = await client.PostAsync("/api/ingestion/worklogs/upload", CreateUploadContent(excel));
+        var json = await ParseResponse(response);
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.InternalServerError));
+        Assert.That(json.GetProperty("success").GetBoolean(), Is.False);
+        Assert.That(json.GetProperty("insertedCount").GetInt32(), Is.EqualTo(0));
+        var errors = json.GetProperty("errors").EnumerateArray().ToList();
+        Assert.That(errors, Has.Count.EqualTo(1));
+        // Verify the error message does NOT expose the sensitive exception details
+        Assert.That(errors[0].GetString(), Does.Contain("unexpected error"));
+        Assert.That(errors[0].GetString(), Does.Not.Contain("sensitive details"));
+        Assert.That(errors[0].GetString(), Does.Not.Contain("Simulated DB failure"));
     }
 
     [Test]

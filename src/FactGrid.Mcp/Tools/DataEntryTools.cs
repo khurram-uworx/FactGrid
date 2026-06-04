@@ -40,9 +40,25 @@ public sealed class DataEntryTools
         if (!outputPath.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
             return "Error: Output path must end with .xlsx";
 
-        var path = templateGenerator.Generate(entityName, outputPath);
+        string path;
+        try
+        {
+            path = templateGenerator.Generate(entityName, outputPath);
+        }
+        catch (Exception ex)
+        {
+            return $"Error: Failed to write template — {ex.Message}";
+        }
 
-        var columns = ExcelColumnMetadata.GetColumns(entity.ModelType);
+        IReadOnlyList<ExcelColumnMetadata.ColumnInfo> columns;
+        try
+        {
+            columns = ExcelColumnMetadata.GetColumns(entity.ModelType);
+        }
+        catch (Exception ex)
+        {
+            return $"Error: Failed to read entity metadata — {ex.Message}";
+        }
 
         var sb = new StringBuilder();
         sb.AppendLine($"Template saved to: {path}");
@@ -166,6 +182,13 @@ public sealed class DataEntryTools
         if (string.IsNullOrWhiteSpace(serverUrl))
             return "Error: FACTGRID_SERVER_URL environment variable is not set. Point it at the FactGrid server URL (e.g., http://localhost:5000).";
 
+        if (!Uri.TryCreate(serverUrl.TrimEnd('/') + "/", UriKind.Absolute, out var baseUri) ||
+            (baseUri.Scheme != "http" && baseUri.Scheme != "https"))
+            return $"Error: FACTGRID_SERVER_URL must be an absolute HTTP or HTTPS URL, got '{serverUrl}'.";
+
+        if (!Uri.TryCreate(baseUri, $"api/ingestion/{entityName}/upload", out var uploadUri))
+            return $"Error: Failed to construct upload URL from FACTGRID_SERVER_URL and entity name.";
+
         // Validate locally before uploading
         IList localRecords;
         List<string> localErrors;
@@ -197,8 +220,6 @@ public sealed class DataEntryTools
             return sb.ToString();
         }
 
-        var uploadUrl = $"{serverUrl.TrimEnd('/')}/api/ingestion/{entityName}/upload";
-
         var httpClient = httpClientFactory.CreateClient();
 
         await using var fileStream = File.OpenRead(filePath);
@@ -208,14 +229,22 @@ public sealed class DataEntryTools
         HttpResponseMessage response;
         try
         {
-            response = await httpClient.PostAsync(uploadUrl, content, ct);
+            response = await httpClient.PostAsync(uploadUri, content, ct);
         }
         catch (Exception ex)
         {
             return $"Error: Upload failed — {ex.Message}";
         }
 
-        var responseBody = await response.Content.ReadAsStringAsync(ct);
+        string responseBody;
+        try
+        {
+            responseBody = await response.Content.ReadAsStringAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            return $"Error: Failed to read server response — {ex.Message}";
+        }
 
         var statusCode = (int)response.StatusCode;
         IngestionResult? result = null;

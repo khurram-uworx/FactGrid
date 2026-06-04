@@ -1,6 +1,7 @@
 using ClosedXML.Excel;
 using FactGrid.Models;
 using FactGrid.Services;
+using System.Collections;
 
 namespace FactGrid.Tests;
 
@@ -200,5 +201,56 @@ public class ExcelTemplateGeneratorTests
             if (File.Exists(tempPath))
                 File.Delete(tempPath);
         }
+    }
+
+    class CustomFormatEntity
+    {
+        public int Id { get; set; }
+        [ExcelColumn(1, "Custom Date", Required = true, Example = "2025-06-01", Format = "dd/MM/yyyy")]
+        public DateOnly CustomDate { get; set; }
+        [ExcelColumn(2, "No Format Decimal", Required = true, Example = 42.5)]
+        public decimal NoFormatDecimal { get; set; }
+    }
+
+    [Test]
+    public void Generate_FormatAttribute_OverridesTypeBasedFallback()
+    {
+        var registry = new EntityRegistry();
+        registry.Register<CustomFormatEntity>(new EntityRegistration(
+            EntityName: "custom", DisplayName: "Custom", ModelType: typeof(CustomFormatEntity),
+            ExcelParserType: typeof(CustomFormatParser), TableName: "Custom",
+            Description: "Entity for format override test"
+        ));
+
+        var generator = new ExcelTemplateGenerator(registry);
+        var tempPath = Path.GetTempFileName() + ".xlsx";
+        try
+        {
+            generator.Generate("custom", tempPath);
+
+            using var workbook = new XLWorkbook(tempPath);
+            var sheet = workbook.Worksheets.First();
+
+            // Column 1 — Format attribute overrides DateOnly fallback
+            var dateCell = sheet.Cell("A2");
+            Assert.That(dateCell.Style.NumberFormat.Format, Is.EqualTo("dd/MM/yyyy"));
+
+            // Column 2 — no Format attribute, falls back to type-based "0.00"
+            var decimalCell = sheet.Cell("B2");
+            Assert.That(decimalCell.Style.NumberFormat.Format, Is.EqualTo("0.00"));
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+                File.Delete(tempPath);
+        }
+    }
+
+    class CustomFormatParser : IExcelParser<CustomFormatEntity>
+    {
+        public (List<CustomFormatEntity> Records, List<string> Errors) Parse(Stream excelStream) =>
+            (new List<CustomFormatEntity>(), new List<string>());
+        (IList Records, List<string> Errors) IExcelParser.Parse(Stream excelStream) =>
+            (new List<CustomFormatEntity>(), new List<string>());
     }
 }
