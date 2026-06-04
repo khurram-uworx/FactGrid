@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 using System.Reflection;
 
 namespace FactGrid.AspNet.Services;
@@ -20,12 +21,16 @@ public static class EntitySchemaHelper
             .Where(p => p.Name != "Id")
             .Select(p => new ColumnMetadata(
                 Name: p.Name,
-                Type: MapToDisplayType(p.PropertyType),
+                Type: GetDisplayType(p),
                 Description: p.GetCustomAttribute<DescriptionAttribute>()?.Description ?? "",
                 MaxLength: p.GetCustomAttribute<MaxLengthAttribute>()?.Length,
                 IsNullable: IsNullableProperty(p)
             ));
     }
+
+    static string GetDisplayType(PropertyInfo property)
+        => property.GetCustomAttribute<ColumnAttribute>()?.TypeName
+            ?? MapToDisplayType(property.PropertyType);
 
     static string MapToDisplayType(Type type)
     {

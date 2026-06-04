@@ -287,7 +287,8 @@ public class GenericSqlQueryToolTests
         Assert.That(result, Does.Contain("ResourceName"));
         Assert.That(result, Does.Contain("NVARCHAR"));
         Assert.That(result, Does.Contain("WorkDate"));
-        Assert.That(result, Does.Contain("DATE"));
+        Assert.That(result, Does.Contain("date"));
+        Assert.That(result, Does.Contain("decimal(10,2)"));
         Assert.That(result, Does.Contain("the resource or person"));
     }
 
