@@ -228,4 +228,86 @@ public class QueryValidationTests
         var (isValid, error) = _service.ValidateScoped("SELECT 1", "ResourceHours");
         Assert.That(isValid, Is.True);
     }
+
+    [Test]
+    public void ValidateTables_SingleAllowed_Passes()
+    {
+        var (isValid, error) = _service.ValidateTables("SELECT * FROM ResourceHours", ["ResourceHours"]);
+        Assert.That(isValid, Is.True);
+        Assert.That(error, Is.Null);
+    }
+
+    [Test]
+    public void ValidateTables_MultipleAllowed_Passes()
+    {
+        var (isValid, error) = _service.ValidateTables(
+            "SELECT w.* FROM ResourceHours w JOIN Expenses e ON w.Id = e.Id",
+            ["ResourceHours", "Expenses"]);
+        Assert.That(isValid, Is.True);
+    }
+
+    [Test]
+    public void ValidateTables_NonAllowed_Rejected()
+    {
+        var (isValid, error) = _service.ValidateTables("SELECT * FROM AspNetUsers", ["ResourceHours", "Expenses"]);
+        Assert.That(isValid, Is.False);
+        Assert.That(error, Does.Contain("AspNetUsers"));
+        Assert.That(error, Does.Contain("ResourceHours"));
+        Assert.That(error, Does.Contain("Expenses"));
+    }
+
+    [Test]
+    public void ValidateTables_JoinSystemTable_Rejected()
+    {
+        var (isValid, error) = _service.ValidateTables(
+            "SELECT w.* FROM ResourceHours w JOIN sqlite_master m ON w.Id = m.rowid",
+            ["ResourceHours", "Expenses"]);
+        Assert.That(isValid, Is.False);
+        Assert.That(error, Does.Contain("sqlite_master"));
+    }
+
+    [Test]
+    public void ValidateTables_UnionNonAllowed_Rejected()
+    {
+        var (isValid, error) = _service.ValidateTables(
+            "SELECT * FROM ResourceHours UNION ALL SELECT * FROM AspNetUsers",
+            ["ResourceHours", "Expenses"]);
+        Assert.That(isValid, Is.False);
+        Assert.That(error, Does.Contain("AspNetUsers"));
+    }
+
+    [Test]
+    public void ValidateTables_SubqueryNonAllowed_Rejected()
+    {
+        var (isValid, error) = _service.ValidateTables(
+            "SELECT * FROM ResourceHours WHERE Id IN (SELECT Id FROM AspNetUsers)",
+            ["ResourceHours", "Expenses"]);
+        Assert.That(isValid, Is.False);
+        Assert.That(error, Does.Contain("AspNetUsers"));
+    }
+
+    [Test]
+    public void ValidateTables_CteWithNonAllowed_Rejected()
+    {
+        var (isValid, error) = _service.ValidateTables(
+            "WITH cte AS (SELECT * FROM AspNetUsers) SELECT * FROM cte",
+            ["ResourceHours", "Expenses"]);
+        Assert.That(isValid, Is.False);
+        Assert.That(error, Does.Contain("AspNetUsers"));
+    }
+
+    [Test]
+    public void ValidateTables_NoFromClause_Passes()
+    {
+        var (isValid, error) = _service.ValidateTables("SELECT 1", ["ResourceHours"]);
+        Assert.That(isValid, Is.True);
+    }
+
+    [Test]
+    public void ValidateTables_EmptyAllowed_RejectsAny()
+    {
+        var (isValid, error) = _service.ValidateTables("SELECT * FROM ResourceHours", []);
+        Assert.That(isValid, Is.False);
+        Assert.That(error, Does.Contain("ResourceHours"));
+    }
 }

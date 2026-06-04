@@ -1,7 +1,6 @@
 using FactGrid.AspNet.Data;
 using FactGrid.AspNet.Services;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using System.Collections;
 
 namespace FactGrid.AspNet.Controllers;

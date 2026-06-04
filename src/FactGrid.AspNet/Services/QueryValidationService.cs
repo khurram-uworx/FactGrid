@@ -34,7 +34,12 @@ public class QueryValidationService
     }
 
     public ValidationResult ValidateScoped(string query, string allowedTableName)
+        => ValidateTables(query, [allowedTableName]);
+
+    public ValidationResult ValidateTables(string query, IEnumerable<string> allowedTableNames)
     {
+        var allowed = new HashSet<string>(allowedTableNames, StringComparer.OrdinalIgnoreCase);
+
         try
         {
             var statements = parser.Parse(query.AsSpan(), Dialect);
@@ -50,14 +55,15 @@ public class QueryValidationService
             CollectTableReferences(selectStmt.Query, tables, cteNames);
 
             var disallowed = tables
-                .Where(t => !cteNames.Contains(t) && !t.Equals(allowedTableName, StringComparison.OrdinalIgnoreCase))
+                .Where(t => !cteNames.Contains(t) && !allowed.Contains(t))
                 .Distinct()
                 .ToList();
 
             if (disallowed.Count > 0)
             {
                 var list = string.Join(", ", disallowed);
-                return Fail($"Query may only reference table '{allowedTableName}'. Disallowed references: {list}");
+                var allowedList = string.Join(", ", allowed);
+                return Fail($"Query references non-registered tables: {list}. Allowed tables: {allowedList}");
             }
 
             return Pass();

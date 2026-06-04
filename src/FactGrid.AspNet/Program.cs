@@ -95,7 +95,9 @@ builder.Services.AddMcpServer()
             return Task.CompletedTask;
         };
     })
-    .WithToolsFromAssembly(typeof(GenericSqlQueryTool).Assembly);
+    .WithToolsFromAssembly(typeof(GenericSqlQueryTool).Assembly)
+    .WithResourcesFromAssembly(typeof(EntityResources).Assembly)
+    .WithPromptsFromAssembly(typeof(EntityPrompts).Assembly);
 
 var app = builder.Build();
 
@@ -159,21 +161,12 @@ app.MapControllerRoute(
 app.MapRazorPages()
    .WithStaticAssets();
 
-// MCP entity routes
-app.MapMcp("/api/mcp/{entityName}")
+// MCP routes — global (/api/mcp) and scoped (/api/mcp/{entityName})
+app.MapMcp("/api/mcp")
    .AllowAnonymous();
 
-// Entity discovery endpoint
-app.MapGet("/api/mcp", (EntityRegistry er) =>
-{
-    return er.GetAll().Select(e => new
-    {
-        name = e.EntityName,
-        displayName = e.DisplayName,
-        description = e.Description,
-        table = e.TableName
-    });
-}).AllowAnonymous();
+app.MapMcp("/api/mcp/{entityName}")
+   .AllowAnonymous();
 
 app.Run();
 

@@ -68,7 +68,8 @@ public class GenericSqlQueryToolTests
             new GenericSqlQueryTool(
                 provider.GetRequiredService<QueryValidationService>(),
                 provider,
-                accessor),
+                accessor,
+                registry),
             db,
             connection
         );
@@ -121,23 +122,134 @@ public class GenericSqlQueryToolTests
     }
 
     [Test]
-    public async Task SqlQueryAsync_NoEntityContext_ReturnsError()
+    public async Task SqlQueryAsync_GlobalMode_CanQueryAnyTable()
     {
-        var services = new ServiceCollection();
-        var connection = new SqliteConnection("Data Source=:memory:");
+        using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
+
+        var services = new ServiceCollection();
         services.AddDbContext<ApplicationDbContext>(options => options.UseSqlite(connection));
         services.AddSingleton<QueryValidationService>();
         var provider = services.BuildServiceProvider();
 
+        var db = provider.GetRequiredService<ApplicationDbContext>();
+        db.Database.EnsureCreated();
+        db.Worklogs.AddRange(
+            new Worklog { ResourceName = "GlobalAlice", Project = "P1", WorkDate = new DateOnly(2024, 1, 1), Hours = 8m, ApprovalStatus = "Approved" }
+        );
+        db.Expenses.AddRange(
+            new Expense { ResourceName = "GlobalBob", Category = "Travel", Amount = 200m, ExpenseDate = new DateOnly(2025, 1, 1), ApprovalStatus = "Pending" }
+        );
+        db.SaveChanges();
+
+        var registry = CreateRegistry();
         var tools = new GenericSqlQueryTool(
             provider.GetRequiredService<QueryValidationService>(),
             provider,
-            new EntityContextAccessor());
+            new EntityContextAccessor(),
+            registry);
 
-        var result = await tools.SqlQueryAsync("SELECT * FROM ResourceHours", 10);
+        var result = await tools.SqlQueryAsync("SELECT ResourceName FROM ResourceHours", 10);
 
-        Assert.That(result, Does.Contain("No entity context"));
+        Assert.That(result, Does.StartWith("|"));
+        Assert.That(result, Does.Contain("GlobalAlice"));
+
+        var result2 = await tools.SqlQueryAsync("SELECT ResourceName FROM Expenses", 10);
+
+        Assert.That(result2, Does.StartWith("|"));
+        Assert.That(result2, Does.Contain("GlobalBob"));
+    }
+
+    [Test]
+    public async Task SqlQueryAsync_GlobalMode_RejectsUnregisteredTable()
+    {
+        using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+
+        var services = new ServiceCollection();
+        services.AddDbContext<ApplicationDbContext>(options => options.UseSqlite(connection));
+        services.AddSingleton<QueryValidationService>();
+        var provider = services.BuildServiceProvider();
+
+        var db = provider.GetRequiredService<ApplicationDbContext>();
+        db.Database.EnsureCreated();
+
+        var registry = CreateRegistry();
+        var tools = new GenericSqlQueryTool(
+            provider.GetRequiredService<QueryValidationService>(),
+            provider,
+            new EntityContextAccessor(),
+            registry);
+
+        var result = await tools.SqlQueryAsync("SELECT * FROM AspNetUsers", 10);
+
+        Assert.That(result, Does.Contain("Error:"));
+        Assert.That(result, Does.Contain("AspNetUsers"));
+    }
+
+    [Test]
+    public async Task SqlQueryAsync_GlobalMode_RejectsSystemTable()
+    {
+        using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+
+        var services = new ServiceCollection();
+        services.AddDbContext<ApplicationDbContext>(options => options.UseSqlite(connection));
+        services.AddSingleton<QueryValidationService>();
+        var provider = services.BuildServiceProvider();
+
+        var db = provider.GetRequiredService<ApplicationDbContext>();
+        db.Database.EnsureCreated();
+
+        var registry = CreateRegistry();
+        var tools = new GenericSqlQueryTool(
+            provider.GetRequiredService<QueryValidationService>(),
+            provider,
+            new EntityContextAccessor(),
+            registry);
+
+        var result = await tools.SqlQueryAsync("SELECT * FROM sqlite_master", 10);
+
+        Assert.That(result, Does.Contain("Error:"));
+        Assert.That(result, Does.Contain("sqlite_master"));
+    }
+
+    [Test]
+    public async Task SqlQueryAsync_GlobalMode_AllowsJoinAcrossRegisteredTables()
+    {
+        using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+
+        var services = new ServiceCollection();
+        services.AddDbContext<ApplicationDbContext>(options => options.UseSqlite(connection));
+        services.AddSingleton<QueryValidationService>();
+        var provider = services.BuildServiceProvider();
+
+        var db = provider.GetRequiredService<ApplicationDbContext>();
+        db.Database.EnsureCreated();
+
+        db.Worklogs.AddRange(
+            new Worklog { ResourceName = "Alice", Project = "P1", WorkDate = new DateOnly(2024, 1, 1), Hours = 8m, ApprovalStatus = "Approved" }
+        );
+        db.Expenses.AddRange(
+            new Expense { ResourceName = "Alice", Category = "Travel", Amount = 200m, ExpenseDate = new DateOnly(2025, 1, 1), ApprovalStatus = "Pending" }
+        );
+        db.SaveChanges();
+
+        var registry = CreateRegistry();
+        var tools = new GenericSqlQueryTool(
+            provider.GetRequiredService<QueryValidationService>(),
+            provider,
+            new EntityContextAccessor(),
+            registry);
+
+        var result = await tools.SqlQueryAsync(
+            "SELECT w.ResourceName, w.Hours, e.Amount FROM ResourceHours w JOIN Expenses e ON w.ResourceName = e.ResourceName", 10);
+
+        Assert.That(result, Does.StartWith("|"));
+        Assert.That(result, Does.Contain("ResourceName"));
+        Assert.That(result, Does.Contain("Hours"));
+        Assert.That(result, Does.Contain("Amount"));
     }
 
     [Test]
@@ -175,25 +287,34 @@ public class GenericSqlQueryToolTests
         Assert.That(result, Does.Contain("ResourceName"));
         Assert.That(result, Does.Contain("NVARCHAR"));
         Assert.That(result, Does.Contain("WorkDate"));
-        Assert.That(result, Does.Contain("DATE"));
+        Assert.That(result, Does.Contain("date"));
+        Assert.That(result, Does.Contain("decimal(10,2)"));
         Assert.That(result, Does.Contain("the resource or person"));
     }
 
     [Test]
-    public async Task DescribeAsync_NoEntityContext_ReturnsError()
+    public async Task DescribeAsync_GlobalMode_ShowsAllEntities()
     {
         var services = new ServiceCollection();
         services.AddSingleton<QueryValidationService>();
         var provider = services.BuildServiceProvider();
 
+        var registry = CreateRegistry();
         var tools = new GenericSqlQueryTool(
             provider.GetRequiredService<QueryValidationService>(),
             provider,
-            new EntityContextAccessor());
+            new EntityContextAccessor(),
+            registry);
 
         var result = await tools.DescribeAsync();
 
-        Assert.That(result, Does.Contain("No entity context"));
+        Assert.That(result, Does.Contain("# Worklogs"));
+        Assert.That(result, Does.Contain("ResourceHours"));
+        Assert.That(result, Does.Contain("# Expense Reports"));
+        Assert.That(result, Does.Contain("Expenses"));
+        Assert.That(result, Does.Contain("ResourceName"));
+        Assert.That(result, Does.Contain("Amount"));
+        Assert.That(result, Does.Not.Contain("Error:"));
     }
 
     static ExpenseFixture CreateExpenseFixture()
@@ -223,7 +344,8 @@ public class GenericSqlQueryToolTests
             new GenericSqlQueryTool(
                 provider.GetRequiredService<QueryValidationService>(),
                 provider,
-                accessor),
+                accessor,
+                registry),
             db,
             connection
         );

@@ -1,7 +1,6 @@
-using System.Collections;
 using ClosedXML.Excel;
-using DocumentFormat.OpenXml.Spreadsheet;
 using FactGrid.AspNet.Models;
+using System.Collections;
 using System.Globalization;
 
 namespace FactGrid.AspNet.Services;
