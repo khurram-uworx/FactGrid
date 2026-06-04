@@ -1,4 +1,5 @@
 using FactGrid.AspNet.Services;
+using FactGrid.Services;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using System.ComponentModel;

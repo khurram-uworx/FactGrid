@@ -1,5 +1,5 @@
-using FactGrid.AspNet.Models;
-using FactGrid.AspNet.Services;
+using FactGrid.Models;
+using FactGrid.Services;
 
 namespace FactGrid.Tests;
 

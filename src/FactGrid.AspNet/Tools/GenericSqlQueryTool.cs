@@ -1,5 +1,6 @@
 using FactGrid.AspNet.Data;
 using FactGrid.AspNet.Services;
+using FactGrid.Services;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.Server;
 using System.ComponentModel;

@@ -1,3 +1,5 @@
+using FactGrid.Services;
+
 namespace FactGrid.AspNet.Services;
 
 public interface IEntityServiceFactory

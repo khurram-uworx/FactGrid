@@ -1,5 +1,5 @@
 using ClosedXML.Excel;
-using FactGrid.AspNet.Services;
+using FactGrid.Services;
 
 namespace FactGrid.Tests;
 
@@ -150,6 +150,26 @@ public class ExpenseReportParserTests
         Assert.That(records, Is.Empty);
         Assert.That(errors, Has.Count.EqualTo(1));
         Assert.That(errors[0], Does.Contain("ExpenseDate"));
+    }
+
+    [Test]
+    public void Parse_TypedDateTimeCell_ParsesCorrectly()
+    {
+        var stream = CreateExcel(sheet =>
+        {
+            sheet.Cell(2, 1).Value = "Bob";
+            sheet.Cell(2, 2).Value = "Travel";
+            sheet.Cell(2, 4).Value = "250.00";
+            sheet.Cell(2, 5).Value = new DateTime(2025, 7, 15);
+            sheet.Cell(2, 6).Value = "Pending";
+        });
+
+        var parser = new ExpensesExcelParser();
+        var (records, errors) = parser.Parse(stream);
+
+        Assert.That(errors, Is.Empty);
+        Assert.That(records, Has.Count.EqualTo(1));
+        Assert.That(records[0].ExpenseDate, Is.EqualTo(new DateOnly(2025, 7, 15)));
     }
 
     [Test]

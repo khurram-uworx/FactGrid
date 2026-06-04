@@ -1,4 +1,4 @@
-using FactGrid.AspNet.Models;
+using FactGrid.Models;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 

@@ -1,5 +1,5 @@
 using FactGrid.AspNet.Data;
-using FactGrid.AspNet.Models;
+using FactGrid.Models;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;

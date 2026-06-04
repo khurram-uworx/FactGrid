@@ -8,6 +8,8 @@
     <File Path="opencode.json" />
     <File Path="README.md" />
   </Folder>
+  <Project Path="src/FactGrid/FactGrid.csproj" />
   <Project Path="src/FactGrid.AspNet/FactGrid.AspNet.csproj" />
+  <Project Path="src/FactGrid.Mcp/FactGrid.Mcp.csproj" />
   <Project Path="tests/FactGrid.Tests/FactGrid.Tests.csproj" />
 </Solution>

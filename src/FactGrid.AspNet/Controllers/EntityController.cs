@@ -1,5 +1,6 @@
 using FactGrid.AspNet.Data;
 using FactGrid.AspNet.Services;
+using FactGrid.Services;
 using Microsoft.AspNetCore.Mvc;
 using System.Collections;
 
