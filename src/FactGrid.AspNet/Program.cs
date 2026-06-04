@@ -48,6 +48,7 @@ builder.Services.AddControllersWithViews();
 
 // Phase 3 — Shared entity catalog and DI
 builder.Services.AddFactGridEntities();
+builder.Services.AddScoped(typeof(IEntityTableService<>), typeof(EntityTableService<>));
 builder.Services.AddScoped<IEntityServiceFactory, EntityServiceFactory>();
 builder.Services.AddSingleton<IEntityContextAccessor, EntityContextAccessor>();
 builder.Services.AddSingleton<QueryValidationService>();

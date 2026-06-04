@@ -1,8 +1,8 @@
 using FactGrid.AspNet.Data;
 using FactGrid.AspNet.Services;
+using FactGrid.Models;
 using FactGrid.Services;
 using Microsoft.AspNetCore.Mvc;
-using System.Text.Json;
 
 namespace FactGrid.AspNet.Controllers;
 
@@ -24,60 +24,87 @@ public class IngestionController : ControllerBase
     [HttpPost("{entityName}/upload")]
     public async Task<IActionResult> Upload(string entityName, IFormFile? file)
     {
-        var entity = registry.Get(entityName);
-        if (entity is null)
+        try
         {
-            return NotFound(new
+            var entity = registry.Get(entityName);
+            if (entity is null)
             {
-                success = false,
-                insertedCount = 0,
-                errors = new[] { $"Unknown entity '{entityName}'" }
+                return NotFound(new IngestionResult
+                {
+                    Success = false,
+                    InsertedCount = 0,
+                    Errors = [$"Unknown entity '{entityName}'"]
+                });
+            }
+
+            if (file is null || file.Length == 0)
+            {
+                return BadRequest(new IngestionResult
+                {
+                    Success = false,
+                    InsertedCount = 0,
+                    Errors = ["No file provided or file is empty."]
+                });
+            }
+
+            if (!file.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest(new IngestionResult
+                {
+                    Success = false,
+                    InsertedCount = 0,
+                    Errors = ["Only .xlsx files are supported."]
+                });
+            }
+
+            using var stream = file.OpenReadStream();
+            var parser = factory.CreateExcelParser(entity.ModelType);
+
+            System.Collections.IList records = new List<object>();
+            List<string> errors = [];
+            try
+            {
+                (records, errors) = parser.Parse(stream);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                return BadRequest(new IngestionResult
+                {
+                    Success = false,
+                    InsertedCount = 0,
+                    Errors = [$"Could not read workbook: {ex.Message}"]
+                });
+            }
+
+            if (errors.Count > 0)
+            {
+                return UnprocessableEntity(new IngestionResult
+                {
+                    Success = false,
+                    InsertedCount = 0,
+                    Errors = errors.ToArray()
+                });
+            }
+
+            foreach (var record in records)
+                db.Add(record);
+            await db.SaveChangesAsync();
+
+            return Ok(new IngestionResult
+            {
+                Success = true,
+                InsertedCount = records.Count,
+                Errors = []
             });
         }
-
-        if (file is null || file.Length == 0)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            return BadRequest(new
+            return StatusCode(500, new IngestionResult
             {
-                success = false,
-                insertedCount = 0,
-                errors = new[] { "No file provided or file is empty." }
+                Success = false,
+                InsertedCount = 0,
+                Errors = ["An unexpected error occurred while processing the upload."]
             });
         }
-
-        if (!file.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
-        {
-            return BadRequest(new
-            {
-                success = false,
-                insertedCount = 0,
-                errors = new[] { "Only .xlsx files are supported." }
-            });
-        }
-
-        using var stream = file.OpenReadStream();
-        var parser = factory.CreateExcelParser(entity.ModelType);
-        var (records, errors) = parser.Parse(stream);
-
-        if (errors.Count > 0)
-        {
-            return UnprocessableEntity(new
-            {
-                success = false,
-                insertedCount = 0,
-                errors
-            });
-        }
-
-        foreach (var record in records)
-            db.Add(record);
-        await db.SaveChangesAsync();
-
-        return Ok(new
-        {
-            success = true,
-            insertedCount = records.Count,
-            errors = Array.Empty<string>()
-        });
     }
 }

@@ -205,4 +205,146 @@ public class IngestionControllerTests
         Assert.That(json.GetProperty("success").GetBoolean(), Is.False);
         Assert.That(json.GetProperty("insertedCount").GetInt32(), Is.EqualTo(0));
     }
+
+    [Test]
+    public async Task Upload_MalformedXlsx_ReturnsBadRequest()
+    {
+        var content = new MultipartFormDataContent();
+        content.Add(new ByteArrayContent([0, 1, 2, 3, 4, 5]), "file", "bad.xlsx");
+
+        var response = await _client.PostAsync("/api/ingestion/worklogs/upload", content);
+        var json = await ParseResponse(response);
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+        Assert.That(json.GetProperty("success").GetBoolean(), Is.False);
+        Assert.That(json.GetProperty("insertedCount").GetInt32(), Is.EqualTo(0));
+        Assert.That(json.GetProperty("errors").EnumerateArray().Any(), Is.True);
+    }
+
+    [Test]
+    public async Task Upload_InvalidRows_LeavesDatabaseUnchanged()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        db.Worklogs.ExecuteDelete();
+        db.SaveChanges();
+
+        // Insert one valid record
+        db.Worklogs.Add(new Worklog { ResourceName = "Alice", Project = "P1", WorkDate = new DateOnly(2025, 1, 1), Hours = 8m, ApprovalStatus = "Approved" });
+        db.SaveChanges();
+
+        var beforeCount = await db.Set<Worklog>().LongCountAsync();
+
+        // Upload with invalid rows
+        var excel = CreateWorklogExcel(sheet =>
+        {
+            sheet.Cell(2, 1).Value = "";
+            sheet.Cell(2, 4).Value = "bad-date";
+            sheet.Cell(2, 5).Value = "abc";
+            sheet.Cell(2, 6).Value = "";
+        });
+
+        var response = await _client.PostAsync("/api/ingestion/worklogs/upload", CreateUploadContent(excel));
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.UnprocessableEntity));
+
+        // DB should still have exactly 1 record
+        var afterCount = await db.Set<Worklog>().LongCountAsync();
+        Assert.That(afterCount, Is.EqualTo(beforeCount));
+    }
+
+    [Test]
+    public async Task Upload_StructuredErrorResponses_ShareSameShape()
+    {
+        // 500 — simulate by sending a valid request to a route that will cause
+        // an unhandled exception. The outer catch in the controller should return
+        // a structured 500 with the IngestionResult shape.
+        //
+        // Since we can't easily trigger a 500 from outside, verify that 400 and
+        // 422 responses share the same contract shape as 200.
+
+        // 200 success
+        var validExcel = CreateWorklogExcel(sheet =>
+        {
+            sheet.Cell(2, 1).Value = "Alice";
+            sheet.Cell(2, 2).Value = "Alpha";
+            sheet.Cell(2, 4).Value = "6/1/2025 12:00:00 AM";
+            sheet.Cell(2, 5).Value = "8";
+            sheet.Cell(2, 6).Value = "Approved";
+        });
+        var okResp = await _client.PostAsync("/api/ingestion/worklogs/upload", CreateUploadContent(validExcel));
+        Assert.That(okResp.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+
+        // 400 bad request — non-xlsx file
+        var badExt = new MultipartFormDataContent();
+        badExt.Add(new ByteArrayContent([0, 1, 2]), "file", "test.txt");
+        var badResp = await _client.PostAsync("/api/ingestion/worklogs/upload", badExt);
+        Assert.That(badResp.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+
+        // 422 unprocessable — invalid rows
+        var invalidExcel = CreateWorklogExcel(sheet =>
+        {
+            sheet.Cell(2, 1).Value = "";
+            sheet.Cell(2, 4).Value = "bad-date";
+            sheet.Cell(2, 5).Value = "abc";
+            sheet.Cell(2, 6).Value = "";
+        });
+        var unprocResp = await _client.PostAsync("/api/ingestion/worklogs/upload", CreateUploadContent(invalidExcel));
+        Assert.That(unprocResp.StatusCode, Is.EqualTo(HttpStatusCode.UnprocessableEntity));
+
+        // All three share the same contract shape
+        foreach (var (resp, _) in new[] { (okResp, "ok"), (badResp, "bad"), (unprocResp, "unproc") })
+        {
+            var body = await resp.Content.ReadAsStringAsync();
+            using var json = JsonDocument.Parse(body);
+            var root = json.RootElement;
+            Assert.That(root.TryGetProperty("success", out _), Is.True, $"{resp.StatusCode} lacks success");
+            Assert.That(root.TryGetProperty("insertedCount", out _), Is.True, $"{resp.StatusCode} lacks insertedCount");
+            Assert.That(root.TryGetProperty("errors", out _), Is.True, $"{resp.StatusCode} lacks errors");
+        }
+    }
+
+    [Test]
+    public async Task Upload_AllResponses_ShareSameJsonShape()
+    {
+        // Verify every error path returns the same contract shape.
+        // No file.
+        var noFile = await _client.PostAsync("/api/ingestion/worklogs/upload", new MultipartFormDataContent
+        {
+            { new StringContent("x"), "not_a_file_field" }
+        });
+        var noFileJson = await ParseResponse(noFile);
+        Assert.That(noFileJson.TryGetProperty("success", out _), Is.True);
+        Assert.That(noFileJson.TryGetProperty("insertedCount", out _), Is.True);
+        Assert.That(noFileJson.TryGetProperty("errors", out _), Is.True);
+
+        // Unknown entity.
+        var unknown = await _client.PostAsync("/api/ingestion/nonexistent/upload", new MultipartFormDataContent
+        {
+            { new ByteArrayContent([0]), "file", "test.xlsx" }
+        });
+        var unknownJson = await ParseResponse(unknown);
+        Assert.That(unknownJson.TryGetProperty("success", out _), Is.True);
+        Assert.That(unknownJson.TryGetProperty("insertedCount", out _), Is.True);
+        Assert.That(unknownJson.TryGetProperty("errors", out _), Is.True);
+
+        // Malformed file.
+        var malformed = await _client.PostAsync("/api/ingestion/worklogs/upload", new MultipartFormDataContent
+        {
+            { new ByteArrayContent([1, 2, 3]), "file", "bad.xlsx" }
+        });
+        var malformedJson = await ParseResponse(malformed);
+        Assert.That(malformedJson.TryGetProperty("success", out _), Is.True);
+        Assert.That(malformedJson.TryGetProperty("insertedCount", out _), Is.True);
+        Assert.That(malformedJson.TryGetProperty("errors", out _), Is.True);
+
+        // Non-xlsx extension.
+        var wrongExt = await _client.PostAsync("/api/ingestion/worklogs/upload", new MultipartFormDataContent
+        {
+            { new ByteArrayContent([1, 2, 3]), "file", "test.txt" }
+        });
+        var wrongExtJson = await ParseResponse(wrongExt);
+        Assert.That(wrongExtJson.TryGetProperty("success", out _), Is.True);
+        Assert.That(wrongExtJson.TryGetProperty("insertedCount", out _), Is.True);
+        Assert.That(wrongExtJson.TryGetProperty("errors", out _), Is.True);
+    }
 }

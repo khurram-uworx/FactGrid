@@ -1,6 +1,5 @@
 <Solution>
   <Folder Name="/docs/">
-    <File Path="docs/PHASE3.md" />
     <File Path="docs/TASKS-TEMPLATE.md" />
   </Folder>
   <Folder Name="/Solution Items/">

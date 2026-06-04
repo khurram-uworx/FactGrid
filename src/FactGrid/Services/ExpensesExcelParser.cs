@@ -8,16 +8,11 @@ namespace FactGrid.Services;
 
 public class ExpensesExcelParser : IExcelParser<Expense>
 {
-    static readonly (int Position, PropertyInfo Property, ExcelColumnAttribute Attr)[] ColumnMap =
-        typeof(Expense).GetProperties()
-            .Select(p => (Prop: p, Attr: p.GetCustomAttribute<ExcelColumnAttribute>()))
-            .Where(x => x.Attr is not null)
-            .Select(x => (x.Attr!.Position, x.Prop, x.Attr))
-            .OrderBy(x => x.Position)
-            .ToArray();
+    static readonly IReadOnlyList<ExcelColumnMetadata.ColumnInfo> ColumnMap =
+        ExcelColumnMetadata.GetColumns(typeof(Expense));
 
-    static readonly Dictionary<string, int> ColumnIndex =
-        ColumnMap.ToDictionary(c => c.Property.Name, c => c.Position);
+    static readonly IReadOnlyDictionary<string, int> ColumnIndex =
+        ExcelColumnMetadata.GetColumnIndex(typeof(Expense));
 
     public (List<Expense> Records, List<string> Errors) Parse(Stream excelStream)
     {
@@ -33,30 +28,32 @@ public class ExpensesExcelParser : IExcelParser<Expense>
             if (row.RowNumber() == 1) continue;
 
             var values = new Dictionary<int, (string Text, XLDataType DataType, DateTime? DateTimeValue)>();
-            foreach (var (pos, prop, attr) in ColumnMap)
+            foreach (var col in ColumnMap)
             {
-                var cell = sheet.Cell(row.RowNumber(), pos);
+                var cell = sheet.Cell(row.RowNumber(), col.Position);
                 DateTime? dt = null;
                 if (cell.DataType == XLDataType.DateTime)
                     dt = cell.GetDateTime();
-                values[pos] = (cell.GetString().Trim(), cell.DataType, dt);
+                values[col.Position] = (cell.GetString().Trim(), cell.DataType, dt);
             }
 
             var anyData = values.Values.Any(v => !string.IsNullOrWhiteSpace(v.Text));
             if (!anyData)
                 continue;
 
+            var cellTexts = ColumnMap.ToDictionary(c => c.Property.Name, c => values[c.Position].Text);
+            var requiredErrors = ExcelColumnMetadata.ValidateRequired(typeof(Expense), cellTexts, row.RowNumber());
+            if (requiredErrors.Count > 0)
+            {
+                errors.AddRange(requiredErrors);
+                continue;
+            }
+
             var resourceName = values[ColumnIndex["ResourceName"]].Text;
             var category = values[ColumnIndex["Category"]].Text;
             var description = values[ColumnIndex["Description"]].Text;
             var amountStr = values[ColumnIndex["Amount"]].Text;
             var approvalStatus = values[ColumnIndex["ApprovalStatus"]].Text;
-
-            if (string.IsNullOrWhiteSpace(resourceName))
-            {
-                errors.Add($"Row {row.RowNumber()}: ResourceName is required");
-                continue;
-            }
 
             if (!decimal.TryParse(amountStr, NumberStyles.Any, CultureInfo.InvariantCulture, out var amount))
             {

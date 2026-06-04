@@ -2,9 +2,8 @@ using FactGrid.Models;
 using FactGrid.Services;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
+using System.Collections;
 using System.ComponentModel;
-using System.Net.Http.Json;
-using System.Reflection;
 using System.Text;
 
 namespace FactGrid.Mcp.Tools;
@@ -32,19 +31,18 @@ public sealed class DataEntryTools
     [McpServerTool, Description("Generates an Excel template for the given entity and saves it to the specified path. Returns the saved path and a summary of columns.")]
     public string GenerateTemplate(
         [Description("Entity name (e.g., worklogs, expenses)")] string entityName,
-        [Description("Full file path where the template should be saved")] string outputPath)
+        [Description("Full .xlsx file path where the template should be saved")] string outputPath)
     {
         var entity = registry.Get(entityName);
         if (entity is null)
             return $"Error: Unknown entity '{entityName}'";
 
+        if (!outputPath.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+            return "Error: Output path must end with .xlsx";
+
         var path = templateGenerator.Generate(entityName, outputPath);
 
-        var columns = entity.ModelType.GetProperties()
-            .Select(p => p.GetCustomAttribute<ExcelColumnAttribute>())
-            .Where(a => a is not null)
-            .OrderBy(a => a!.Position)
-            .ToList();
+        var columns = ExcelColumnMetadata.GetColumns(entity.ModelType);
 
         var sb = new StringBuilder();
         sb.AppendLine($"Template saved to: {path}");
@@ -55,7 +53,7 @@ public sealed class DataEntryTools
         sb.AppendLine("| # | Column | Required | Example |");
         sb.AppendLine("|---|--------|----------|---------|");
         foreach (var col in columns)
-            sb.AppendLine($"| {col!.Position} | {col.Title} | {col.Required} | {col.Example} |");
+            sb.AppendLine($"| {col.Position} | {col.Attr.Title} | {col.Attr.Required} | {col.Attr.Example} |");
 
         return sb.ToString();
     }
@@ -76,12 +74,22 @@ public sealed class DataEntryTools
         if (!filePath.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
             return $"Error: Only .xlsx files are supported.";
 
-        using var scope = serviceProvider.CreateScope();
-        var parser = (IExcelParser)scope.ServiceProvider.GetRequiredService(
-            typeof(IExcelParser<>).MakeGenericType(entity.ModelType));
+        IList records;
+        List<string> errors;
 
-        await using var stream = File.OpenRead(filePath);
-        var (records, errors) = parser.Parse(stream);
+        try
+        {
+            using var scope = serviceProvider.CreateScope();
+            var parser = (IExcelParser)scope.ServiceProvider.GetRequiredService(
+                typeof(IExcelParser<>).MakeGenericType(entity.ModelType));
+
+            await using var stream = File.OpenRead(filePath);
+            (records, errors) = parser.Parse(stream);
+        }
+        catch (Exception ex)
+        {
+            return $"Error: Failed to parse workbook — {ex.Message}";
+        }
 
         var sb = new StringBuilder();
 
@@ -97,15 +105,11 @@ public sealed class DataEntryTools
             sb.AppendLine("### Record Preview");
             sb.AppendLine();
 
-            var columns = entity.ModelType.GetProperties()
-                .Select(p => (Prop: p, Attr: p.GetCustomAttribute<ExcelColumnAttribute>()))
-                .Where(x => x.Attr is not null)
-                .OrderBy(x => x.Attr!.Position)
-                .ToList();
+            var columns = ExcelColumnMetadata.GetColumns(entity.ModelType);
 
             sb.Append('|');
-            foreach (var (_, attr) in columns)
-                sb.Append($" {attr!.Title} |");
+            foreach (var col in columns)
+                sb.Append($" {col.Attr.Title} |");
             sb.AppendLine();
 
             sb.Append('|');
@@ -113,21 +117,21 @@ public sealed class DataEntryTools
                 sb.Append("---|");
             sb.AppendLine();
 
-            var previewCount = Math.Min(records.Count, 5);
+            var previewCount = Math.Min(records.Count, 20);
             for (var i = 0; i < previewCount; i++)
             {
                 var record = records[i];
                 sb.Append('|');
-                foreach (var (prop, _) in columns)
+                foreach (var col in columns)
                 {
-                    var val = prop.GetValue(record)?.ToString() ?? "";
+                    var val = col.Property.GetValue(record)?.ToString() ?? "";
                     sb.Append($" {val.Replace("|", "\\|")} |");
                 }
                 sb.AppendLine();
             }
 
-            if (records.Count > 5)
-                sb.AppendLine($"*... and {records.Count - 5} more records*");
+            if (records.Count > 20)
+                sb.AppendLine($"*... and {records.Count - 20} more records*");
         }
 
         if (errors.Count > 0)
@@ -158,7 +162,41 @@ public sealed class DataEntryTools
         if (!filePath.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
             return $"Error: Only .xlsx files are supported.";
 
-        var serverUrl = Environment.GetEnvironmentVariable("FACTGRID_SERVER_URL") ?? "http://localhost:5000";
+        var serverUrl = Environment.GetEnvironmentVariable("FACTGRID_SERVER_URL");
+        if (string.IsNullOrWhiteSpace(serverUrl))
+            return "Error: FACTGRID_SERVER_URL environment variable is not set. Point it at the FactGrid server URL (e.g., http://localhost:5000).";
+
+        // Validate locally before uploading
+        IList localRecords;
+        List<string> localErrors;
+
+        try
+        {
+            using var scope = serviceProvider.CreateScope();
+            var parser = (IExcelParser)scope.ServiceProvider.GetRequiredService(
+                typeof(IExcelParser<>).MakeGenericType(entity.ModelType));
+
+            await using var parseStream = File.OpenRead(filePath);
+            (localRecords, localErrors) = parser.Parse(parseStream);
+        }
+        catch (Exception ex)
+        {
+            return $"Error: Failed to parse workbook locally — {ex.Message}";
+        }
+
+        if (localErrors.Count > 0)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("Error: Workbook has validation errors. Fix them before uploading.");
+            sb.AppendLine();
+            sb.AppendLine($"Records parsed: {localRecords.Count}");
+            sb.AppendLine($"Errors: {localErrors.Count}");
+            sb.AppendLine();
+            foreach (var error in localErrors)
+                sb.AppendLine($"- {error}");
+            return sb.ToString();
+        }
+
         var uploadUrl = $"{serverUrl.TrimEnd('/')}/api/ingestion/{entityName}/upload";
 
         var httpClient = httpClientFactory.CreateClient();
@@ -178,7 +216,37 @@ public sealed class DataEntryTools
         }
 
         var responseBody = await response.Content.ReadAsStringAsync(ct);
-        return $"Server responded with status {(int)response.StatusCode}:\n\n{responseBody}";
+
+        var statusCode = (int)response.StatusCode;
+        IngestionResult? result = null;
+        try
+        {
+            result = System.Text.Json.JsonSerializer.Deserialize<IngestionResult>(responseBody,
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch
+        {
+            // Not JSON or unexpected shape — fall through to raw text
+        }
+
+        if (result is not null)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"Server responded with status {statusCode}");
+            sb.AppendLine();
+            sb.AppendLine($"Success: {result.Success}");
+            sb.AppendLine($"Records inserted: {result.InsertedCount}");
+            if (result.Errors is { Length: > 0 })
+            {
+                sb.AppendLine();
+                sb.AppendLine("Server errors:");
+                foreach (var error in result.Errors)
+                    sb.AppendLine($"- {error}");
+            }
+            return sb.ToString();
+        }
+
+        return $"Server responded with status {statusCode}:\n\n{responseBody}";
     }
 
     [McpServerTool, Description("Lists all registered entities with their descriptions and Excel column metadata.")]
@@ -204,14 +272,10 @@ public sealed class DataEntryTools
             sb.AppendLine("| # | Column | Required | Example |");
             sb.AppendLine("|---|--------|----------|---------|");
 
-            var columns = entity.ModelType.GetProperties()
-                .Select(p => (Prop: p, Attr: p.GetCustomAttribute<ExcelColumnAttribute>()))
-                .Where(x => x.Attr is not null)
-                .OrderBy(x => x.Attr!.Position)
-                .ToList();
+            var columns = ExcelColumnMetadata.GetColumns(entity.ModelType);
 
-            foreach (var (_, attr) in columns)
-                sb.AppendLine($"| {attr!.Position} | {attr.Title} | {attr.Required} | {attr.Example} |");
+            foreach (var col in columns)
+                sb.AppendLine($"| {col.Position} | {col.Attr.Title} | {col.Attr.Required} | {col.Attr.Example} |");
         }
 
         return sb.ToString();

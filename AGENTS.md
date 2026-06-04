@@ -20,6 +20,7 @@ Engineering constraints and implementation guidance for AI coding agents contrib
 ```bash
 dotnet build src/FactGrid.AspNet
 dotnet run --project src/FactGrid.AspNet
+dotnet run --project src/FactGrid.Mcp
 dotnet test tests/FactGrid.Tests
 dotnet ef migrations add <Name> --project src/FactGrid.AspNet
 dotnet ef database update --project src/FactGrid.AspNet
@@ -31,16 +32,22 @@ dotnet ef database update --project src/FactGrid.AspNet
 
 ```
 FactGrid/
+├── src/FactGrid/                # Shared library (net10.0)
+│   ├── Models/                # EF entity classes, [ExcelColumn] attribute, IngestionResult contract
+│   ├── Services/              # Parsers, ExcelColumnMetadata, ExcelDateHelper, ExcelTemplateGenerator, EntityRegistry, EntitySchemaHelper, ServiceCollectionExtensions
+│   └── FactGridEntityCatalog.cs  # Static catalog of supported entity definitions
 ├── src/FactGrid.AspNet/           # ASP.NET MVC web app (net10.0)
-│   ├── Controllers/             # MVC controllers
+│   ├── Controllers/             # MVC + API controllers
 │   ├── Data/                    # DbContext + EF migrations
-│   ├── Models/                  # EF entity classes with [Description]
-│   ├── Services/                # Business logic (Excel parsing, query validation)
-│   ├── Tools/                   # MCP tool classes ([McpServerToolType])
+│   ├── Services/                # Persistence-specific services (IEntityTableService, etc.)
+│   ├── Tools/                   # HTTP MCP tool classes ([McpServerToolType])
 │   ├── Views/                   # Razor views
-│   └── Program.cs               # Startup — DI, MCP server, middleware
-├── tests/FactGrid.Tests/           # NUnit tests
-├── docs/                        # Phase plans, ADRs, task templates
+│   └── Program.cs               # Startup — DI, MCP server, middleware, provider config
+├── src/FactGrid.Mcp/             # Local STDIO MCP console app (net10.0)
+│   ├── Tools/DataEntryTools.cs   # 4 STDIO MCP tools (generate_template, validate_excel, upload_excel, list_entities)
+│   └── Program.cs               # Startup — DI, STDIO MCP server
+├── tests/FactGrid.Tests/           # NUnit tests (199+ tests)
+├── docs/                        # Phase plans, getting-started guide, task templates
 └── AGENTS.md                    # ← you are here
 ```
 
@@ -60,20 +67,44 @@ Do not reinvent infrastructure. Prefer existing .NET and ecosystem primitives ov
 - `[Description("...")]` on each property for MCP schema discovery
 - `[MaxLength(n)]` for string length constraints
 - `[Column(TypeName = "decimal(10,2)")]` for precision
+- `[ExcelColumn(position, "Title", Required = ..., Example = ...)]` for Excel metadata
 - Entity name can differ from table name (e.g., `Worklogs` → `ResourceHours`)
 
-### MCP Tools
+### Shared FactGrid Library (`src/FactGrid/`)
 
-- Tools are classes decorated with `[McpServerToolType]`
-- Methods are decorated with `[McpServerTool]` and `[Description]` (from `System.ComponentModel`)
-- Parameters use `[Description]` for LLM-facing docs
+- **Models**: Entity classes with both EF and `[ExcelColumn]` metadata; `IngestionResult` response contract
+- **ExcelColumnAttribute**: `Position`, `Title`, `Required`, `Example`, `Format`
+- **ExcelColumnMetadata**: Cache-backed reader for `GetColumns()`, `GetColumnIndex()`, `Validate()`, `ValidateRequired()`
+- **Parsers** (`WorklogsExcelParser`, `ExpensesExcelParser`): Implement `IExcelParser<T>`. Use `ExcelColumnMetadata.GetColumnIndex()` for metadata-driven column position lookup. Accept typed DateTime cells and text dates (`M/d/yyyy h:mm:ss tt`, `yyyy-MM-dd`). Never throw on bad data — return errors list.
+- **ExcelDateHelper**: `ParseDateText()` accepts both date formats above
+- **ExcelTemplateGenerator**: Generates `.xlsx` with typed example values, `yyyy-mm-dd` for date cells, `0.00` for decimal cells
+- **EntityRegistry**: Singleton runtime registry. Populated by `AddFactGridEntities()` in `ServiceCollectionExtensions`
+- **FactGridEntityCatalog**: Static class listing all supported entity definitions (names, types, parser types, table names)
+- **EntitySchemaHelper**: Builds structured schema metadata from entity models
+- **ServiceCollectionExtensions**: `AddFactGridEntities()` — registers registry, template generator, all parsers, and `IEntityTableService<>` open-generic
+
+### MCP Tools — Central HTTP (`FactGrid.AspNet`)
+
+- Classes decorated with `[McpServerToolType]`
+- Methods: `[McpServerTool]` + `[Description]`
 - Registered via `WithToolsFromAssembly(typeof(Tool).Assembly)` in `Program.cs`
 - Route mapped with `app.MapMcp("/api/mcp/{name}").AllowAnonymous()`
-- Tool names are auto-derived: `SqlQueryAsync` → `sql_query`, `DescribeAsync` → `describe`
+- Tool names auto-derived: `SqlQueryAsync` → `sql_query`, `DescribeAsync` → `describe`
 - Tools return `Task<string>` for markdown or `Task<IDictionary<string, object?>>` for JSON
 - Use `IServiceProvider.CreateScope()` to resolve scoped services (DbContext) from singleton tools
 
 **Reference code:** `E:\khurram-uworx\CodeMemory\src\CodeMemory.AspNet\Tools\AspNetSqlQueryTool.cs`
+
+### MCP Tools — Local STDIO (`FactGrid.Mcp`)
+
+- Single `DataEntryTools` class with 4 tools:
+  - `generate_template(entityName, outputPath)` — requires `.xlsx` extension on outputPath
+  - `validate_excel(entityName, filePath)` — up to 20-record preview; catches corrupt workbooks with error message
+  - `upload_excel(entityName, filePath)` — requires `FACTGRID_SERVER_URL` env var; validates locally before HTTP upload; deserializes `IngestionResult` response
+  - `list_entities()` — uses `ExcelColumnMetadata.GetColumns()` for ordered column display
+- Registered in `Program.cs` via `WithToolsFromAssembly(typeof(DataEntryTools).Assembly)`
+- Resolves parsers from scoped DI using `IServiceProvider.CreateScope()`
+- All tools return string results (never throw on invalid input)
 
 ### SqlParserCS (SELECT-only gate)
 
@@ -85,11 +116,13 @@ if (statements[0] is not Statement.Select) fail;
 
 **Reference code:** `CodeMemory.AspNet/Tools/AspNetSqlQueryTool.cs:290-308`
 
-### Excel Upload (ClosedXML)
+### Excel Upload & Parsing
 
-- First sheet only, header row skipped (row 1), fixed 1-based column positions
-- Returns `(List<T> Records, List<string> Errors)` — never throws on bad data
-- Each caller uses `AddRange` + `SaveChangesAsync` for bulk insert
+- First sheet only, header row skipped (row 1), column positions from `[ExcelColumn]` metadata
+- Parsers return `(IList Records, List<string> Errors)` — never throws on bad data
+- Shared `ExcelColumnMetadata.ValidateRequired()` checks `[ExcelColumn(Required = true)]` fields before row-level parsing
+- IngestionController uses inner try-catch for malformed workbooks (structured 400) and outer try-catch for unexpected failures (structured 500)
+- UnprocessableEntity (422) returned when workbook parses but contains validation errors; no records inserted
 
 ### Multi-Provider DB
 
@@ -100,10 +133,10 @@ if (statements[0] is not Statement.Select) fail;
 ### Entity Registry
 
 - Singleton `EntityRegistry` maps entity names to model types, table names, Excel parser types, and descriptions
-- Registered in `Program.cs` via `registry.RegisterWithParser<TModel, TParser>(entityName, displayName, tableName, description)`
-- Each entity needs a model class, a `DbSet<T>` in `ApplicationDbContext`, an `IExcelParser<T>` implementation, and a registry entry
+- Populated via `AddFactGridEntities()` extension method
+- Each entity needs: model class, `DbSet<T>` in `ApplicationDbContext`, `IExcelParser<T>` implementation, entry in `FactGridEntityCatalog`
 - Provides `Get(entityName)` for per-entity routing in both MCP and web UI controllers
-- Serves the `GET /api/mcp` discovery endpoint listing all registered entities
+- Both hosts use the same shared registry via `AddFactGridEntities()`
 
 ---
 
@@ -111,12 +144,12 @@ if (statements[0] is not Statement.Select) fail;
 
 | Package | Used For |
 |---------|----------|
-| `ClosedXML` | Excel file parsing |
-| `SqlParserCS` | SELECT-only SQL validation |
-| `ModelContextProtocol` | MCP tool attributes |
-| `ModelContextProtocol.AspNetCore` | Streamable HTTP transport |
-| `Microsoft.EntityFrameworkCore.Sqlite` | SQLite provider |
-| `Npgsql.EntityFrameworkCore.PostgreSQL` | PostgreSQL provider |
+| `ClosedXML` | Excel file parsing (shared FactGrid library) |
+| `SqlParserCS` | SELECT-only SQL validation (AspNet only) |
+| `ModelContextProtocol` | MCP tool attributes (both hosts) |
+| `ModelContextProtocol.AspNetCore` | Streamable HTTP transport (AspNet only) |
+| `Microsoft.EntityFrameworkCore.Sqlite` | SQLite provider (AspNet only) |
+| `Npgsql.EntityFrameworkCore.PostgreSQL` | PostgreSQL provider (AspNet only) |
 
 ---
 

@@ -50,15 +50,106 @@ For SQL Server, create the database first or let EF create it:
 dotnet ef database update --project src/FactGrid.AspNet
 ```
 
+## Run the Local STDIO MCP (FactGrid.Mcp)
+
+The local STDIO MCP (`FactGrid.Mcp`) is a console app that communicates with your coding agent over standard input/output. It does not start a web server.
+
+Configure it in your MCP client's `opencode.json` or equivalent:
+
+```jsonc
+{
+  "servers": {
+    "factgrid-mcp": {
+      "type": "stdio",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--project",
+        "src/FactGrid.Mcp/FactGrid.Mcp.csproj"
+      ],
+      "env": {
+        "FACTGRID_SERVER_URL": "http://localhost:5000"
+      }
+    }
+  }
+}
+```
+
+The `FACTGRID_SERVER_URL` environment variable is **required** for the `upload_excel` tool. Set it to the base URL of your running FactGrid organization server.
+
+## Local Data Entry Tools (FactGrid.Mcp STDIO)
+
+These tools are available when your coding agent connects to the local STDIO MCP:
+
+| Tool | Description |
+|---|---|
+| `generate_template(entityName, outputPath)` | Generates a typed `.xlsx` template with headers and an example row. `outputPath` must end with `.xlsx`. |
+| `validate_excel(entityName, filePath)` | Parses the workbook and returns a preview (up to 20 records) plus validation errors. Does not modify any data. |
+| `upload_excel(entityName, filePath)` | Validates the workbook locally, then uploads it to `FACTGRID_SERVER_URL/api/ingestion/{entityName}/upload`. Returns the server's structured result. |
+| `list_entities()` | Lists all registered entities with their descriptions and Excel column metadata. |
+
+### Generated Templates
+
+Templates have:
+
+- **Column headers** derived from `[ExcelColumn]` metadata, ordered by position number
+- **Example data row** (row 2) with typed values from `[ExcelColumn(Example = ...)]`
+- **Number formatting**: `yyyy-mm-dd` for date columns, `0.00` for decimal/numeric columns
+- **Validation**: required fields are marked in the column metadata; parsers enforce them
+
+### Accepted Date Formats
+
+When parsing workbook cells, both `WorklogsExcelParser` and `ExpensesExcelParser` accept:
+
+- **Typed DateTime cells** — cells with `XLDataType.DateTime` set by Excel date pickers
+- **Text dates** in two formats:
+  - `M/d/yyyy h:mm:ss tt` (e.g., `12/25/2024 12:00:00 AM`)
+  - `yyyy-MM-dd` (e.g., `2024-12-25`)
+
+## Ingestion API (FactGrid.AspNet)
+
+`POST /api/ingestion/{entityName}/upload` accepts a multipart `.xlsx` file.
+
+### Response Status Codes
+
+| Status | Meaning |
+|---|---|
+| `200 OK` | All records inserted. Response includes `success: true` and `insertedCount`. |
+| `400 Bad Request` | No file provided, wrong extension, or malformed workbook. |
+| `422 Unprocessable Entity` | Workbook parsed but contained validation errors (missing required fields, bad dates, bad numbers). No records inserted. |
+| `404 Not Found` | Unknown entity name. |
+| `500 Internal Server Error` | Unexpected server failure. No records inserted. |
+
+### Response Shape
+
+All responses share the same JSON contract (`IngestionResult`):
+
+```json
+{
+  "success": false,
+  "insertedCount": 0,
+  "errors": ["Could not read workbook: ..."]
+}
+```
+
+### End-to-End Upload Flow
+
+1. Local coding agent calls `validate_excel` to preview records and catch errors early.
+2. Agent or user fixes any validation errors in the workbook.
+3. Agent calls `upload_excel`, which re-parses the workbook locally and rejects it if errors remain.
+4. If local validation passes, the tool uploads the file to the central ingestion API.
+5. The server re-parses the workbook authoritatively and either inserts all records atomically or returns a structured error.
+6. The tool returns the server's structured response (success count or server errors).
+
 ## Verify the App
 
 ### Browse Web UI
 
 Open `https://localhost:5001/Entity` to see registered entities.
 
-### MCP Endpoints
+### Central HTTP MCP Endpoints
 
-FactGrid exposes two MCP routes:
+FactGrid exposes two MCP routes for reporting:
 
 | Route | Scope | Description |
 |---|---|---|
@@ -140,14 +231,14 @@ curl -X POST https://localhost:5001/api/mcp/worklogs \
   }'
 ```
 
-## Uploading Excel Files
+## Uploading Excel Files (Web UI)
 
 1. Navigate to `https://localhost:5001/Entity`
 2. Select an entity (e.g., Worklogs)
 3. Click **Choose File** and select an `.xlsx` file
 4. Click **Upload**
 
-Expected columns: header row (row 1) is skipped, data starts at row 2. Column positions are fixed per parser.
+Expected columns: header row (row 1) is skipped, data starts at row 2. Column positions are determined by `[ExcelColumn]` metadata.
 
 ## Running Tests
 

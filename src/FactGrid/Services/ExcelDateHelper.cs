@@ -4,7 +4,7 @@ namespace FactGrid.Services;
 
 public static class ExcelDateHelper
 {
-    static readonly string[] DateFormats = ["M/d/yyyy h:mm:ss tt"];
+    static readonly string[] DateFormats = ["M/d/yyyy h:mm:ss tt", "yyyy-MM-dd"];
 
     public static DateOnly? ParseDateText(string text)
     {

@@ -31,3 +31,6 @@ approval_mode = "approve"
 
 [mcp_servers.code-memory.tools.find_related_code]
 approval_mode = "approve"
+
+[mcp_servers.code-memory.tools.trace_dependency]
+approval_mode = "approve"

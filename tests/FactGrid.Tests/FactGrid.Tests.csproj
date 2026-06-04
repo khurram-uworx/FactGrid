@@ -31,6 +31,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\FactGrid.AspNet\FactGrid.AspNet.csproj" />
+    <ProjectReference Include="..\..\src\FactGrid.Mcp\FactGrid.Mcp.csproj" />
     <ProjectReference Include="..\..\src\FactGrid\FactGrid.csproj" />
   </ItemGroup>
 

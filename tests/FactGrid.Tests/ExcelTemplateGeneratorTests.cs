@@ -1,3 +1,4 @@
+using ClosedXML.Excel;
 using FactGrid.Models;
 using FactGrid.Services;
 
@@ -118,6 +119,86 @@ public class ExcelTemplateGeneratorTests
                 File.Delete(tempPath);
             if (Directory.Exists(tempDir))
                 Directory.Delete(tempDir);
+        }
+    }
+
+    [Test]
+    public void Generate_OverwritesExistingFile()
+    {
+        var registry = CreateRegistry();
+        var generator = new ExcelTemplateGenerator(registry);
+
+        var tempPath = Path.GetTempFileName() + ".xlsx";
+        try
+        {
+            File.WriteAllText(tempPath, "old content");
+            var beforeWrite = new FileInfo(tempPath).Length;
+
+            generator.Generate("worklogs", tempPath);
+
+            Assert.That(File.Exists(tempPath), Is.True);
+            Assert.That(new FileInfo(tempPath).Length, Is.Not.EqualTo(beforeWrite));
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+                File.Delete(tempPath);
+        }
+    }
+
+    [Test]
+    public void Generate_WorklogTemplate_HasDateAndDecimalFormats()
+    {
+        var registry = CreateRegistry();
+        var generator = new ExcelTemplateGenerator(registry);
+
+        var tempPath = Path.GetTempFileName() + ".xlsx";
+        try
+        {
+            generator.Generate("worklogs", tempPath);
+
+            using var workbook = new XLWorkbook(tempPath);
+            var sheet = workbook.Worksheets.First();
+
+            // WorkDate is column 4 (D), Hours is column 5 (E)
+            var dateCell = sheet.Cell("D2");
+            Assert.That(dateCell.Style.NumberFormat.Format, Is.EqualTo("yyyy-mm-dd"));
+
+            var hoursCell = sheet.Cell("E2");
+            Assert.That(hoursCell.Style.NumberFormat.Format, Is.EqualTo("0.00"));
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+                File.Delete(tempPath);
+        }
+    }
+
+    [Test]
+    public void Generate_ExpenseTemplate_HasDateAndDecimalFormats()
+    {
+        var registry = CreateRegistry();
+        var generator = new ExcelTemplateGenerator(registry);
+
+        var tempPath = Path.GetTempFileName() + ".xlsx";
+        try
+        {
+            generator.Generate("expenses", tempPath);
+
+            using var workbook = new XLWorkbook(tempPath);
+            var sheet = workbook.Worksheets.First();
+
+            // Amount is column 4 (D), ExpenseDate is column 5 (E)
+            var amountCell = sheet.Cell("D2");
+            Assert.That(amountCell.Style.NumberFormat.Format, Is.EqualTo("0.00"));
+
+            var dateCell = sheet.Cell("E2");
+            Assert.That(dateCell.Style.NumberFormat.Format, Is.EqualTo("yyyy-mm-dd"));
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+                File.Delete(tempPath);
         }
     }
 }

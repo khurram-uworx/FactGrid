@@ -18,27 +18,23 @@ public class ExcelTemplateGenerator
         var entity = registry.Get(entityName)
             ?? throw new ArgumentException($"Unknown entity '{entityName}'");
 
-        var columns = entity.ModelType.GetProperties()
-            .Select(p => (Prop: p, Attr: p.GetCustomAttribute<ExcelColumnAttribute>()))
-            .Where(x => x.Attr is not null)
-            .Select(x => (x.Attr!.Position, Attr: x.Attr))
-            .OrderBy(x => x.Position)
-            .ToList();
+        var columns = ExcelColumnMetadata.GetColumns(entity.ModelType);
 
         using var workbook = new XLWorkbook();
         var sheet = workbook.Worksheets.Add(entity.DisplayName);
 
-        foreach (var (pos, attr) in columns)
+        foreach (var col in columns)
         {
-            var colLetter = GetColumnLetter(pos);
+            var colLetter = GetColumnLetter(col.Position);
 
-            sheet.Cell($"{colLetter}1").Value = attr.Title;
+            sheet.Cell($"{colLetter}1").Value = col.Attr.Title;
             sheet.Cell($"{colLetter}1").Style.Font.Bold = true;
 
-            if (attr.Example is not null)
+            if (col.Attr.Example is not null)
             {
                 var exampleCell = sheet.Cell($"{colLetter}2");
-                SetTypedCellValue(exampleCell, attr.Example);
+                SetTypedCellValue(exampleCell, col.Attr.Example);
+                ApplyNumberFormat(exampleCell, col.Property.PropertyType);
             }
         }
 
@@ -50,6 +46,14 @@ public class ExcelTemplateGenerator
 
         workbook.SaveAs(outputPath);
         return outputPath;
+    }
+
+    static void ApplyNumberFormat(IXLCell cell, Type propertyType)
+    {
+        if (propertyType == typeof(DateOnly) || propertyType == typeof(DateTime))
+            cell.Style.NumberFormat.Format = "yyyy-mm-dd";
+        else if (propertyType == typeof(decimal) || propertyType == typeof(double) || propertyType == typeof(float))
+            cell.Style.NumberFormat.Format = "0.00";
     }
 
     static void SetTypedCellValue(IXLCell cell, object value)

@@ -7,6 +7,7 @@ public class ExcelColumnAttribute : Attribute
     public string Title { get; set; }
     public bool Required { get; set; }
     public object? Example { get; set; }
+    public string? Format { get; set; }
 
     public ExcelColumnAttribute(int position, string title)
     {
