@@ -86,6 +86,24 @@ public class QueryValidationService
         }
 
         WalkSetExpression(query.Body, tables, cteNames);
+
+        if (query.OrderBy is { } orderBy)
+            WalkOrderBy(orderBy, tables, cteNames);
+
+        if (query.Limit is { } limit)
+            WalkExpression(limit, tables, cteNames);
+
+        if (query.Offset is { } offset)
+            WalkExpression(offset.Value, tables, cteNames);
+
+        if (query.Fetch?.Quantity is { } quantity)
+            WalkExpression(quantity, tables, cteNames);
+
+        if (query.LimitBy is { } limitBy)
+        {
+            foreach (var expression in limitBy)
+                WalkExpression(expression, tables, cteNames);
+        }
     }
 
     void WalkSetExpression(SetExpression expr, HashSet<string> tables, HashSet<string> cteNames)
@@ -98,6 +116,9 @@ public class QueryValidationService
             case SetExpression.SetOperation so:
                 WalkSetExpression(so.Left, tables, cteNames);
                 WalkSetExpression(so.Right, tables, cteNames);
+                break;
+            case SetExpression.QueryExpression qe:
+                CollectTableReferences(qe.Query, tables, cteNames);
                 break;
         }
     }
@@ -175,7 +196,7 @@ public class QueryValidationService
                 foreach (var p in match.PartitionBy)
                     WalkExpression(p, tables, cteNames);
                 foreach (var o in match.OrderBy)
-                    WalkExpression(o.Expression, tables, cteNames);
+                    WalkOrderByExpression(o, tables, cteNames);
                 break;
 
             case TableFactor.Pivot pivot:
@@ -186,6 +207,39 @@ public class QueryValidationService
                 WalkTableFactor(unpivot.TableFactor, tables, cteNames);
                 break;
         }
+    }
+
+    void WalkOrderBy(OrderBy orderBy, HashSet<string> tables, HashSet<string> cteNames)
+    {
+        if (orderBy.Expressions is { } expressions)
+        {
+            foreach (var expression in expressions)
+                WalkOrderByExpression(expression, tables, cteNames);
+        }
+
+        if (orderBy.Interpolate?.Expressions is { } interpolateExpressions)
+        {
+            foreach (var interpolate in interpolateExpressions)
+            {
+                if (interpolate.Expression is { } expression)
+                    WalkExpression(expression, tables, cteNames);
+            }
+        }
+    }
+
+    void WalkOrderByExpression(OrderByExpression orderBy, HashSet<string> tables, HashSet<string> cteNames)
+    {
+        WalkExpression(orderBy.Expression, tables, cteNames);
+
+        if (orderBy.WithFill is not { } withFill)
+            return;
+
+        if (withFill.From is { } from)
+            WalkExpression(from, tables, cteNames);
+        if (withFill.To is { } to)
+            WalkExpression(to, tables, cteNames);
+        if (withFill.Step is { } step)
+            WalkExpression(step, tables, cteNames);
     }
 
     void WalkJoinOperator(JoinOperator? op, HashSet<string> tables, HashSet<string> cteNames)
@@ -456,7 +510,7 @@ public class QueryValidationService
                     WalkExpression(filter, tables, cteNames);
                 if (func.WithinGroup is { } withinGroup)
                     foreach (var o in withinGroup)
-                        WalkExpression(o.Expression, tables, cteNames);
+                        WalkOrderByExpression(o, tables, cteNames);
                 break;
 
             case Expression.MapAccess mapAccess:
