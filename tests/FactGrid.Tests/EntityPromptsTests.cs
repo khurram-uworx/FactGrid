@@ -1,6 +1,7 @@
-using FactGrid.AspNet.Models;
 using FactGrid.AspNet.Services;
 using FactGrid.AspNet.Tools;
+using FactGrid.Models;
+using FactGrid.Services;
 using ModelContextProtocol.Protocol;
 
 namespace FactGrid.Tests;

@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Reflection;
 
-namespace FactGrid.AspNet.Services;
+namespace FactGrid.Services;
 
 public record ColumnMetadata(
     string Name,

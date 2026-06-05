@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace FactGrid.AspNet.Services;
+namespace FactGrid.Services;
 
 public record EntityRegistration(
     string EntityName,

@@ -1,5 +1,5 @@
 using ClosedXML.Excel;
-using FactGrid.AspNet.Services;
+using FactGrid.Services;
 
 namespace FactGrid.Tests;
 
@@ -194,15 +194,72 @@ public class WorklogsExcelParserTests
     }
 
     [Test]
-    public void Parse_EmptySheet_ReturnsEmpty()
+    public void Parse_IsoDateText_ParsesCorrectly()
     {
-        var stream = CreateExcel(_ => { });
+        var stream = CreateExcel(sheet =>
+        {
+            sheet.Cell(2, 1).Value = "Alice";
+            sheet.Cell(2, 2).Value = "Alpha";
+            sheet.Cell(2, 4).Value = "2024-12-25";
+            sheet.Cell(2, 5).Value = "8";
+            sheet.Cell(2, 6).Value = "Approved";
+        });
+
+        var parser = new WorklogsExcelParser();
+        var (records, errors) = parser.Parse(stream);
+
+        Assert.That(errors, Is.Empty);
+        Assert.That(records, Has.Count.EqualTo(1));
+        Assert.That(records[0].WorkDate, Is.EqualTo(new DateOnly(2024, 12, 25)));
+    }
+
+    [Test]
+    public void Parse_TypedDateTimeCell_ParsesCorrectly()
+    {
+        var stream = CreateExcel(sheet =>
+        {
+            sheet.Cell(2, 1).Value = "Alice";
+            sheet.Cell(2, 2).Value = "Alpha";
+            sheet.Cell(2, 4).Value = new DateTime(2024, 12, 25);
+            sheet.Cell(2, 5).Value = "8";
+            sheet.Cell(2, 6).Value = "Approved";
+        });
+
+        var parser = new WorklogsExcelParser();
+        var (records, errors) = parser.Parse(stream);
+
+        Assert.That(errors, Is.Empty);
+        Assert.That(records, Has.Count.EqualTo(1));
+        Assert.That(records[0].WorkDate, Is.EqualTo(new DateOnly(2024, 12, 25)));
+    }
+
+    [Test]
+    public void Parse_EmptySheet_ReturnsNoRecordsNoErrors()
+    {
+        var stream = CreateExcel(sheet =>
+        {
+            sheet.Cell(2, 1).Value = "";
+            sheet.Cell(2, 2).Value = "";
+            sheet.Cell(2, 3).Value = "";
+            sheet.Cell(2, 4).Value = "";
+            sheet.Cell(2, 5).Value = "";
+            sheet.Cell(2, 6).Value = "";
+        });
 
         var parser = new WorklogsExcelParser();
         var (records, errors) = parser.Parse(stream);
 
         Assert.That(records, Is.Empty);
         Assert.That(errors, Is.Empty);
+    }
+
+    [Test]
+    public void Parse_MalformedBytes_ThrowsFileFormatException()
+    {
+        var stream = new MemoryStream([0, 1, 2, 3, 4, 5]);
+
+        var parser = new WorklogsExcelParser();
+        Assert.Throws<System.IO.FileFormatException>(() => parser.Parse(stream));
     }
 
     [Test]

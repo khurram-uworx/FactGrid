@@ -1,7 +1,7 @@
 using FactGrid.AspNet.Data;
-using FactGrid.AspNet.Models;
 using FactGrid.AspNet.Services;
 using FactGrid.AspNet.Tools;
+using FactGrid.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -46,29 +46,11 @@ builder.Services.AddDefaultIdentity<IdentityUser>(options => options.SignIn.Requ
     .AddEntityFrameworkStores<ApplicationDbContext>();
 builder.Services.AddControllersWithViews();
 
-// Phase 2 — Entity Registry
-var registry = new EntityRegistry();
-registry.RegisterWithParser<Worklog, WorklogsExcelParser>(
-    entityName: "worklogs",
-    displayName: "Worklogs",
-    tableName: "ResourceHours",
-    description: "Employee worklog entries"
-);
-registry.RegisterWithParser<Expense, ExpensesExcelParser>(
-    entityName: "expenses",
-    displayName: "Expenses",
-    tableName: "Expenses",
-    description: "Employee expense entries"
-);
-builder.Services.AddSingleton(registry);
-
-// DI registrations
+// Phase 3 — Shared entity catalog and DI
+builder.Services.AddFactGridEntities();
+builder.Services.AddScoped(typeof(IEntityTableService<>), typeof(EntityTableService<>));
 builder.Services.AddScoped<IEntityServiceFactory, EntityServiceFactory>();
 builder.Services.AddSingleton<IEntityContextAccessor, EntityContextAccessor>();
-builder.Services.AddScoped<IExcelParser<Worklog>, WorklogsExcelParser>();
-builder.Services.AddScoped<IExcelParser<Expense>, ExpensesExcelParser>();
-builder.Services.AddScoped<IEntityTableService<Worklog>, EntityTableService<Worklog>>();
-builder.Services.AddScoped<IEntityTableService<Expense>, EntityTableService<Expense>>();
 builder.Services.AddSingleton<QueryValidationService>();
 
 // MCP server with per-request entity context

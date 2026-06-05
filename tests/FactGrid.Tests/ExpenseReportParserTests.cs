@@ -1,5 +1,5 @@
 using ClosedXML.Excel;
-using FactGrid.AspNet.Services;
+using FactGrid.Services;
 
 namespace FactGrid.Tests;
 
@@ -153,6 +153,47 @@ public class ExpenseReportParserTests
     }
 
     [Test]
+    public void Parse_IsoDateText_ParsesCorrectly()
+    {
+        var stream = CreateExcel(sheet =>
+        {
+            sheet.Cell(2, 1).Value = "Bob";
+            sheet.Cell(2, 2).Value = "Travel";
+            sheet.Cell(2, 3).Value = "Conference";
+            sheet.Cell(2, 4).Value = "250.00";
+            sheet.Cell(2, 5).Value = "2025-07-15";
+            sheet.Cell(2, 6).Value = "Pending";
+        });
+
+        var parser = new ExpensesExcelParser();
+        var (records, errors) = parser.Parse(stream);
+
+        Assert.That(errors, Is.Empty);
+        Assert.That(records, Has.Count.EqualTo(1));
+        Assert.That(records[0].ExpenseDate, Is.EqualTo(new DateOnly(2025, 7, 15)));
+    }
+
+    [Test]
+    public void Parse_TypedDateTimeCell_ParsesCorrectly()
+    {
+        var stream = CreateExcel(sheet =>
+        {
+            sheet.Cell(2, 1).Value = "Bob";
+            sheet.Cell(2, 2).Value = "Travel";
+            sheet.Cell(2, 4).Value = "250.00";
+            sheet.Cell(2, 5).Value = new DateTime(2025, 7, 15);
+            sheet.Cell(2, 6).Value = "Pending";
+        });
+
+        var parser = new ExpensesExcelParser();
+        var (records, errors) = parser.Parse(stream);
+
+        Assert.That(errors, Is.Empty);
+        Assert.That(records, Has.Count.EqualTo(1));
+        Assert.That(records[0].ExpenseDate, Is.EqualTo(new DateOnly(2025, 7, 15)));
+    }
+
+    [Test]
     public void Parse_EmptySheet_ReturnsEmpty()
     {
         var stream = CreateExcel(_ => { });
@@ -162,6 +203,15 @@ public class ExpenseReportParserTests
 
         Assert.That(records, Is.Empty);
         Assert.That(errors, Is.Empty);
+    }
+
+    [Test]
+    public void Parse_MalformedBytes_ThrowsFileFormatException()
+    {
+        var stream = new MemoryStream([0, 1, 2, 3, 4, 5]);
+
+        var parser = new ExpensesExcelParser();
+        Assert.Throws<System.IO.FileFormatException>(() => parser.Parse(stream));
     }
 
     [Test]

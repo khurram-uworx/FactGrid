@@ -1,6 +1,6 @@
 using System.Collections;
 
-namespace FactGrid.AspNet.Services;
+namespace FactGrid.Services;
 
 public interface IExcelParser
 {
