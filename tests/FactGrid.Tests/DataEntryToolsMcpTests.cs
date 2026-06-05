@@ -293,13 +293,21 @@ public class DataEntryToolsMcpTests
     }
 
     [Test]
-    public void GenerateTemplate_InvalidPath_ReturnsFileError()
+    public void GenerateTemplate_OutputParentIsFile_ReturnsFileError()
     {
         var tools = CreateTools();
-        var badPath = Path.Combine(Path.GetTempPath(), "invalid|chars?are*bad.xlsx");
-        var result = tools.GenerateTemplate("worklogs", badPath);
-        Assert.That(result, Does.Contain("Error:"));
-        Assert.That(result, Does.Contain("write"));
+        var parentFilePath = Path.GetTempFileName();
+        try
+        {
+            var badPath = Path.Combine(parentFilePath, "template.xlsx");
+            var result = tools.GenerateTemplate("worklogs", badPath);
+            Assert.That(result, Does.Contain("Error:"));
+            Assert.That(result, Does.Contain("write"));
+        }
+        finally
+        {
+            if (File.Exists(parentFilePath)) File.Delete(parentFilePath);
+        }
     }
 
     // ── upload_excel ───────────────────────────────────────────────
