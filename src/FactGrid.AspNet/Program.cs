@@ -68,6 +68,9 @@ builder.Services.AddOpenIddict()
                .RequireProofKeyForCodeExchange()
                .AllowRefreshTokenFlow();
 
+        if (builder.Configuration.GetValue<bool>("Auth:EnablePasswordGrant"))
+            options.AllowPasswordFlow();
+
         options.RegisterScopes(
             Scopes.OpenId,
             Scopes.Email,
@@ -78,10 +81,14 @@ builder.Services.AddOpenIddict()
         options.AddDevelopmentSigningCertificate();
         options.AddDevelopmentEncryptionCertificate();
 
-        options.UseAspNetCore()
-               .EnableAuthorizationEndpointPassthrough()
-               .EnableTokenEndpointPassthrough()
-               .EnableEndSessionEndpointPassthrough();
+        var aspNetCoreOptions = options.UseAspNetCore();
+
+        if (builder.Configuration.GetValue<bool>("Auth:EnablePasswordGrant"))
+            aspNetCoreOptions.DisableTransportSecurityRequirement();
+
+        aspNetCoreOptions.EnableAuthorizationEndpointPassthrough()
+                         .EnableTokenEndpointPassthrough()
+                         .EnableEndSessionEndpointPassthrough();
     })
     .AddValidation(options =>
     {

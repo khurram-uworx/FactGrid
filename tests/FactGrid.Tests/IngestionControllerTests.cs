@@ -9,7 +9,13 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Security.Claims;
 using System.Text.Json;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using System.Text.Encodings.Web;
 
 namespace FactGrid.Tests;
 
@@ -20,13 +26,43 @@ public class IngestionControllerTests
     static WebApplicationFactory<Program> _factory = null!;
     static HttpClient _client = null!;
 
+    class TestJwtAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
+    {
+        public const string TestToken = "valid-test-token";
+
+        public TestJwtAuthHandler(
+            IOptionsMonitor<AuthenticationSchemeOptions> options,
+            ILoggerFactory logger,
+            UrlEncoder encoder)
+            : base(options, logger, encoder) { }
+
+        protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+        {
+            var authHeader = Request.Headers.Authorization.FirstOrDefault();
+            if (authHeader is not null && authHeader == $"Bearer {TestToken}")
+            {
+                var identity = new ClaimsIdentity(
+                    authenticationType: Scheme.Name,
+                    nameType: ClaimTypes.Name,
+                    roleType: ClaimTypes.Role);
+                identity.AddClaim(new Claim(ClaimTypes.Name, "test-user"));
+                identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, "test-user-id"));
+                var principal = new ClaimsPrincipal(identity);
+                var ticket = new AuthenticationTicket(principal, Scheme.Name);
+                return Task.FromResult(AuthenticateResult.Success(ticket));
+            }
+
+            return Task.FromResult(AuthenticateResult.NoResult());
+        }
+    }
+
     static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
     [OneTimeSetUp]
-    public void OneTimeSetUp()
+    public async Task OneTimeSetUp()
     {
         _connection = new SqliteConnection("Data Source=:memory:");
         _connection.Open();
@@ -50,6 +86,19 @@ public class IngestionControllerTests
                     {
                         options.UseSqlite(_connection);
                         options.UseOpenIddict();
+                    });
+
+                    // Override the JwtBearer handler with a test handler for deterministic tests.
+                    // The Bearer scheme was already registered by AddJwtBearer() in Program.cs.
+                    // Replace its HandlerType on the existing builder instead of calling AddScheme
+                    // (which would throw on duplicate scheme name).
+                    services.Configure<AuthenticationOptions>(o =>
+                    {
+                        foreach (var scheme in o.Schemes)
+                        {
+                            if (scheme.Name == JwtBearerDefaults.AuthenticationScheme)
+                                scheme.HandlerType = typeof(TestJwtAuthHandler);
+                        }
                     });
                 });
             });
@@ -101,6 +150,8 @@ public class IngestionControllerTests
         var body = await response.Content.ReadAsStringAsync();
         return JsonSerializer.Deserialize<JsonElement>(body, JsonOpts);
     }
+
+
 
     [Test]
     public async Task Upload_ValidWorklogs_ReturnsSuccessWithCount()
@@ -424,6 +475,50 @@ public class IngestionControllerTests
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         Assert.That(json.GetProperty("success").GetBoolean(), Is.True);
         Assert.That(json.GetProperty("insertedCount").GetInt32(), Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task Upload_WithValidJwt_Returns200()
+    {
+        using var jwtClient = _factory.CreateClient();
+        jwtClient.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", TestJwtAuthHandler.TestToken);
+
+        var excel = CreateWorklogExcel(sheet =>
+        {
+            sheet.Cell(2, 1).Value = "Alice";
+            sheet.Cell(2, 2).Value = "Alpha";
+            sheet.Cell(2, 4).Value = "6/1/2025 12:00:00 AM";
+            sheet.Cell(2, 5).Value = "8";
+            sheet.Cell(2, 6).Value = "Approved";
+        });
+
+        var response = await jwtClient.PostAsync("/api/ingestion/worklogs/upload", CreateUploadContent(excel));
+        var json = await ParseResponse(response);
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(json.GetProperty("success").GetBoolean(), Is.True);
+        Assert.That(json.GetProperty("insertedCount").GetInt32(), Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task Upload_WithExpiredToken_Returns401()
+    {
+        using var badTokenClient = _factory.CreateClient();
+        badTokenClient.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", "garbage-or-expired-token");
+
+        var excel = CreateWorklogExcel(sheet =>
+        {
+            sheet.Cell(2, 1).Value = "Alice";
+            sheet.Cell(2, 2).Value = "Alpha";
+            sheet.Cell(2, 4).Value = "6/1/2025 12:00:00 AM";
+            sheet.Cell(2, 5).Value = "8";
+            sheet.Cell(2, 6).Value = "Approved";
+        });
+
+        var response = await badTokenClient.PostAsync("/api/ingestion/worklogs/upload", CreateUploadContent(excel));
+        Assert.That((int)response.StatusCode, Is.EqualTo(401));
     }
 
     [Test]

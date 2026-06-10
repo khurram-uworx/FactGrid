@@ -166,6 +166,7 @@ public sealed class DataEntryTools
     public async Task<string> UploadExcelAsync(
         [Description("Entity name (e.g., worklogs, expenses)")] string entityName,
         [Description("Full file path to the Excel file to upload")] string filePath,
+        [Description("Optional API key for server authentication")] string? apiKey = null,
         CancellationToken ct = default)
     {
         var entity = registry.Get(entityName);
@@ -188,6 +189,8 @@ public sealed class DataEntryTools
 
         if (!Uri.TryCreate(baseUri, $"api/ingestion/{entityName}/upload", out var uploadUri))
             return $"Error: Failed to construct upload URL from FACTGRID_SERVER_URL and entity name.";
+
+        apiKey ??= Environment.GetEnvironmentVariable("FACTGRID_SERVER_APIKEY");
 
         // Validate locally before uploading
         IList localRecords;
@@ -221,6 +224,9 @@ public sealed class DataEntryTools
         }
 
         var httpClient = httpClientFactory.CreateClient();
+
+        if (!string.IsNullOrEmpty(apiKey))
+            httpClient.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
 
         await using var fileStream = File.OpenRead(filePath);
         using var content = new MultipartFormDataContent();
