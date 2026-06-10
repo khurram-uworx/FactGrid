@@ -149,6 +149,7 @@ public class EntityPendingModelTests
         {
             var options = new DbContextOptionsBuilder<ApplicationDbContext>()
                 .UseSqlite(connection)
+                .UseOpenIddict()
                 .Options;
 
             var db = new ApplicationDbContext(options);
@@ -186,7 +187,10 @@ public class EntityControllerIntegrationTests
                         services.Remove(d);
 
                     services.AddDbContext<ApplicationDbContext>(options =>
-                        options.UseSqlite(_connection));
+                    {
+                        options.UseSqlite(_connection);
+                        options.UseOpenIddict();
+                    });
                 });
             });
 

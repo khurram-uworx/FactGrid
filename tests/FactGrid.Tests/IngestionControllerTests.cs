@@ -44,7 +44,10 @@ public class IngestionControllerTests
                         services.Remove(d);
 
                     services.AddDbContext<ApplicationDbContext>(options =>
-                        options.UseSqlite(_connection));
+                    {
+                        options.UseSqlite(_connection);
+                        options.UseOpenIddict();
+                    });
                 });
             });
 
@@ -333,7 +336,10 @@ public class IngestionControllerTests
                         services.Remove(d);
 
                     services.AddDbContext<ApplicationDbContext>(options =>
-                        options.UseSqlite(connection));
+                    {
+                        options.UseSqlite(connection);
+                        options.UseOpenIddict();
+                    });
 
                     // Replace the real factory with a throwing one
                     var factoryDesc = services.SingleOrDefault(d => d.ServiceType == typeof(IEntityServiceFactory));

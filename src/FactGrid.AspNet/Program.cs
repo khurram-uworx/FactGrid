@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
+
 var builder = WebApplication.CreateBuilder(args);
 
 var provider = builder.Configuration.GetValue<string>("Storage:Provider") ?? "sqlserver";
@@ -37,6 +38,8 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
             options.UseSqlServer(connectionString);
             break;
     }
+
+    options.UseOpenIddict();
 });
 
 if (provider.Equals("sqlserver", StringComparison.OrdinalIgnoreCase))
@@ -44,6 +47,42 @@ if (provider.Equals("sqlserver", StringComparison.OrdinalIgnoreCase))
 
 builder.Services.AddDefaultIdentity<IdentityUser>(options => options.SignIn.RequireConfirmedAccount = true)
     .AddEntityFrameworkStores<ApplicationDbContext>();
+
+builder.Services.AddOpenIddict()
+    .AddCore(options => options
+        .UseEntityFrameworkCore()
+        .UseDbContext<ApplicationDbContext>())
+    .AddServer(options =>
+    {
+        options.SetAuthorizationEndpointUris("/connect/authorize")
+               .SetTokenEndpointUris("/connect/token")
+               .SetEndSessionEndpointUris("/connect/logout");
+
+        options.AllowAuthorizationCodeFlow()
+               .RequireProofKeyForCodeExchange()
+               .AllowRefreshTokenFlow();
+
+        options.RegisterScopes(
+            "openid",
+            "email",
+            "profile",
+            "offline_access",
+            "mcp:tools");
+
+        options.AddDevelopmentSigningCertificate();
+        options.AddDevelopmentEncryptionCertificate();
+
+        options.UseAspNetCore()
+               .EnableAuthorizationEndpointPassthrough()
+               .EnableTokenEndpointPassthrough()
+               .EnableEndSessionEndpointPassthrough();
+    })
+    .AddValidation(options =>
+    {
+        options.UseLocalServer();
+        options.UseAspNetCore();
+    });
+
 builder.Services.AddControllersWithViews();
 
 // Phase 3 — Shared entity catalog and DI
@@ -122,6 +161,13 @@ else
     app.UseExceptionHandler("/Home/Error");
 }
 app.UseRouting();
+
+app.UseHttpsRedirection();
+
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+}
 
 app.UseAuthorization();
 
