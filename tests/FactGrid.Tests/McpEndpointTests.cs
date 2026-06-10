@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 
@@ -30,6 +31,8 @@ public class McpEndpointTests
         _factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
+                builder.UseSetting("Auth:ApiKey", "test-api-key");
+
                 builder.ConfigureServices(services =>
                 {
                     var descriptorsToRemove = services
@@ -41,11 +44,15 @@ public class McpEndpointTests
                         services.Remove(d);
 
                     services.AddDbContext<ApplicationDbContext>(options =>
-                        options.UseSqlite(_connection));
+                    {
+                        options.UseSqlite(_connection);
+                        options.UseOpenIddict();
+                    });
                 });
             });
 
         _client = _factory.CreateClient();
+        _client.DefaultRequestHeaders.Add("X-Api-Key", "test-api-key");
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -319,5 +326,28 @@ public class McpEndpointTests
         var global = await CallDescribeAsync("/api/mcp");
         Assert.That(global, Does.Contain("# Worklogs"));
         Assert.That(global, Does.Contain("# Expenses"));
+    }
+
+    [Test]
+    public async Task Mcp_WithoutAuth_Returns401()
+    {
+        using var noAuthClient = _factory.CreateClient();
+
+        var json = JsonSerializer.Serialize(new
+        {
+            jsonrpc = "2.0",
+            id = 1,
+            method = "tools/call",
+            @params = new { name = "describe" }
+        }, JsonOpts);
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/mcp")
+        {
+            Content = content,
+            Headers = { { "Accept", "application/json, text/event-stream" } }
+        };
+
+        var response = await noAuthClient.SendAsync(request);
+        Assert.That((int)response.StatusCode, Is.EqualTo(401));
     }
 }

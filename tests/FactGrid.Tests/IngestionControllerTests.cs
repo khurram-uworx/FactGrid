@@ -8,6 +8,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text.Json;
 
 namespace FactGrid.Tests;
@@ -33,6 +34,8 @@ public class IngestionControllerTests
         _factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
+                builder.UseSetting("Auth:ApiKey", "test-api-key");
+
                 builder.ConfigureServices(services =>
                 {
                     var descriptorsToRemove = services
@@ -52,6 +55,7 @@ public class IngestionControllerTests
             });
 
         _client = _factory.CreateClient();
+        _client.DefaultRequestHeaders.Add("X-Api-Key", "test-api-key");
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -325,6 +329,8 @@ public class IngestionControllerTests
         using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
+                builder.UseSetting("Auth:ApiKey", "test-api-key");
+
                 builder.ConfigureServices(services =>
                 {
                     var descriptorsToRemove = services
@@ -350,6 +356,7 @@ public class IngestionControllerTests
             });
 
         using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Api-Key", "test-api-key");
 
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -376,6 +383,47 @@ public class IngestionControllerTests
         Assert.That(errors[0].GetString(), Does.Contain("unexpected error"));
         Assert.That(errors[0].GetString(), Does.Not.Contain("sensitive details"));
         Assert.That(errors[0].GetString(), Does.Not.Contain("Simulated DB failure"));
+    }
+
+    [Test]
+    public async Task Upload_WithoutAuth_Returns401()
+    {
+        using var noAuthClient = _factory.CreateClient();
+
+        var excel = CreateWorklogExcel(sheet =>
+        {
+            sheet.Cell(2, 1).Value = "Alice";
+            sheet.Cell(2, 2).Value = "Alpha";
+            sheet.Cell(2, 4).Value = "6/1/2025 12:00:00 AM";
+            sheet.Cell(2, 5).Value = "8";
+            sheet.Cell(2, 6).Value = "Approved";
+        });
+
+        var response = await noAuthClient.PostAsync("/api/ingestion/worklogs/upload", CreateUploadContent(excel));
+        Assert.That((int)response.StatusCode, Is.EqualTo(401));
+    }
+
+    [Test]
+    public async Task Upload_WithApiKey_Returns200()
+    {
+        using var apiKeyClient = _factory.CreateClient();
+        apiKeyClient.DefaultRequestHeaders.Add("X-Api-Key", "test-api-key");
+
+        var excel = CreateWorklogExcel(sheet =>
+        {
+            sheet.Cell(2, 1).Value = "Alice";
+            sheet.Cell(2, 2).Value = "Alpha";
+            sheet.Cell(2, 4).Value = "6/1/2025 12:00:00 AM";
+            sheet.Cell(2, 5).Value = "8";
+            sheet.Cell(2, 6).Value = "Approved";
+        });
+
+        var response = await apiKeyClient.PostAsync("/api/ingestion/worklogs/upload", CreateUploadContent(excel));
+        var json = await ParseResponse(response);
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(json.GetProperty("success").GetBoolean(), Is.True);
+        Assert.That(json.GetProperty("insertedCount").GetInt32(), Is.EqualTo(1));
     }
 
     [Test]

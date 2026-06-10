@@ -1,12 +1,14 @@
 using FactGrid.AspNet.Data;
 using FactGrid.AspNet.Services;
 using FactGrid.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Collections;
 
 namespace FactGrid.AspNet.Controllers;
 
 [Route("Entity")]
+[Authorize]
 public class EntityController : Controller
 {
     readonly ApplicationDbContext db;

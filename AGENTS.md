@@ -119,6 +119,16 @@ if (statements[0] is not Statement.Select) fail;
 - Shared `ExcelColumnMetadata.ValidateRequired()` checks `[ExcelColumn(Required = true)]` fields before row-level parsing
 - Keep machine ingestion structured and atomic; validation failures must insert no records.
 
+### OpenIddict OAuth (ASP.NET Core host)
+
+- **OpenIddict 7.x+** does NOT require implementing `IOpenIddictDbContext` or declaring `DbSet<>` properties for OpenIddict entities. All entity registration is handled by `options.UseOpenIddict()` on the `DbContextOptionsBuilder` — this is called once in `Program.cs`.
+- Server config (`AddServer`): call `UseAspNetCore()` with `EnableAuthorizationEndpointPassthrough()`, `EnableTokenEndpointPassthrough()`, `EnableEndSessionEndpointPassthrough()`.
+- Validation config (`AddValidation`): call `UseLocalServer()` + `UseAspNetCore()`.
+- Use `Scopes.OpenId` / `Scopes.Email` / `Scopes.Profile` / `Scopes.OfflineAccess` constants from `OpenIddictConstants` (import `using static OpenIddict.Abstractions.OpenIddictConstants`) rather than string literals.
+- Client seed: use `IOpenIddictApplicationManager.CreateAsync(new OpenIddictApplicationDescriptor { ... })` with `ConsentTypes.Explicit`, `Permissions.Endpoints.*`, `Permissions.GrantTypes.*`, `Permissions.Scopes.*`, `Permissions.Prefixes.Scope + "custom_scope"`, and `Requirements.Features.ProofKeyForCodeExchange`.
+- `ConfigureTestServices()` is NOT available on `IWebHostBuilder` in this .NET 10 / Microsoft.AspNetCore.Mvc.Testing 10.0.8 setup. Use `ConfigureServices` with `services.Configure<AuthenticationOptions>(o => { ... })` to override defaults in integration tests instead.
+- NuGet packages needed: `OpenIddict`, `OpenIddict.EntityFrameworkCore`, `OpenIddict.AspNetCore`, `Microsoft.AspNetCore.Authentication.JwtBearer`.
+
 ### Multi-Provider DB
 
 - Keep provider selection centralized in the ASP.NET host's `Program.cs`.
@@ -141,6 +151,10 @@ if (statements[0] is not Statement.Select) fail;
 | `ClosedXML` | Excel file parsing (shared FactGrid library) |
 | `SqlParserCS` | SELECT-only SQL validation (AspNet only) |
 | `ModelContextProtocol` | MCP tool attributes (both hosts) |
+| `OpenIddict` | OAuth 2.0 / OpenID Connect server (AspNet only) |
+| `OpenIddict.EntityFrameworkCore` | OpenIddict EF Core stores (AspNet only) |
+| `OpenIddict.AspNetCore` | OpenIddict ASP.NET Core integration (AspNet only) |
+| `Microsoft.AspNetCore.Authentication.JwtBearer` | JWT Bearer token validation (AspNet only) |
 | `ModelContextProtocol.AspNetCore` | Streamable HTTP transport (AspNet only) |
 | `Microsoft.EntityFrameworkCore.Sqlite` | SQLite provider (AspNet only) |
 | `Npgsql.EntityFrameworkCore.PostgreSQL` | PostgreSQL provider (AspNet only) |

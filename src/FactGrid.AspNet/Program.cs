@@ -5,9 +5,10 @@ using FactGrid.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Abstractions;
 using static OpenIddict.Abstractions.OpenIddictConstants;
-
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,6 +25,9 @@ var connectionString = provider.ToLowerInvariant() switch
         ?? throw new InvalidOperationException("Connection string 'SqlServer' not found."),
     var p => throw new InvalidOperationException($"Unsupported Storage:Provider '{p}'.")
 };
+
+var baseUrl = builder.Configuration.GetValue<string>("Auth:BaseUrl")
+    ?? throw new InvalidOperationException("Auth:BaseUrl not configured.");
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
 {
@@ -65,10 +69,10 @@ builder.Services.AddOpenIddict()
                .AllowRefreshTokenFlow();
 
         options.RegisterScopes(
-            "openid",
-            "email",
-            "profile",
-            "offline_access",
+            Scopes.OpenId,
+            Scopes.Email,
+            Scopes.Profile,
+            Scopes.OfflineAccess,
             "mcp:tools");
 
         options.AddDevelopmentSigningCertificate();
@@ -84,6 +88,37 @@ builder.Services.AddOpenIddict()
         options.UseLocalServer();
         options.UseAspNetCore();
     });
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultScheme = IdentityConstants.ApplicationScheme;
+    options.DefaultChallengeScheme = IdentityConstants.ApplicationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.Authority = baseUrl;
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidIssuer = baseUrl,
+        ValidAudience = baseUrl,
+        NameClaimType = "name",
+        RoleClaimType = "roles"
+    };
+})
+.AddMcp(options =>
+{
+    options.ResourceMetadata = new()
+    {
+        ResourceDocumentation = "https://github.com/khurram-uworx/FactGrid",
+        AuthorizationServers = { baseUrl },
+        ScopesSupported = { "mcp:tools" },
+    };
+})
+.AddScheme<ApiKeyAuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
+    ApiKeyAuthenticationHandler.SchemeName, null);
 
 builder.Services.AddControllersWithViews();
 
@@ -197,10 +232,22 @@ app.MapRazorPages()
 
 // MCP routes — global (/api/mcp) and scoped (/api/mcp/{entityName})
 app.MapMcp("/api/mcp")
-   .AllowAnonymous();
+   .RequireAuthorization(policy =>
+   {
+       policy.AddAuthenticationSchemes(
+           JwtBearerDefaults.AuthenticationScheme,
+           ApiKeyAuthenticationHandler.SchemeName);
+       policy.RequireAuthenticatedUser();
+   });
 
 app.MapMcp("/api/mcp/{entityName}")
-   .AllowAnonymous();
+   .RequireAuthorization(policy =>
+   {
+       policy.AddAuthenticationSchemes(
+           JwtBearerDefaults.AuthenticationScheme,
+           ApiKeyAuthenticationHandler.SchemeName);
+       policy.RequireAuthenticatedUser();
+   });
 
 app.Run();
 

@@ -2,12 +2,15 @@ using FactGrid.AspNet.Data;
 using FactGrid.AspNet.Services;
 using FactGrid.Models;
 using FactGrid.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FactGrid.AspNet.Controllers;
 
 [Route("api/ingestion")]
 [ApiController]
+[Authorize(AuthenticationSchemes = $"{JwtBearerDefaults.AuthenticationScheme},{ApiKeyAuthenticationHandler.SchemeName}")]
 public class IngestionController : ControllerBase
 {
     readonly ApplicationDbContext db;
