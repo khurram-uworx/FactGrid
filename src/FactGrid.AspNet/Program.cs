@@ -5,6 +5,8 @@ using FactGrid.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using OpenIddict.Abstractions;
+using static OpenIddict.Abstractions.OpenIddictConstants;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -152,6 +154,9 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
+// Seed OpenIddict clients
+await SeedOpenIddictClientsAsync(app.Services);
+
 if (app.Environment.IsDevelopment())
 {
     app.UseMigrationsEndPoint();
@@ -169,6 +174,7 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
+app.UseAuthentication();
 app.UseAuthorization();
 
 // Clear stale entity context before each request (prevents cross-request leakage)
@@ -206,4 +212,45 @@ static string EnsureSqliteCacheShared(string connString)
         builder.Cache = SqliteCacheMode.Shared;
     }
     return builder.ConnectionString;
+}
+
+static async Task SeedOpenIddictClientsAsync(IServiceProvider services)
+{
+    await using var scope = services.CreateAsyncScope();
+    var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
+
+    if (await manager.FindByClientIdAsync("factgrid-mcp") is null)
+    {
+        await manager.CreateAsync(new OpenIddictApplicationDescriptor
+        {
+            ClientId = "factgrid-mcp",
+            DisplayName = "FactGrid MCP Client (demo)",
+            ConsentType = ConsentTypes.Explicit,
+            RedirectUris =
+            {
+                new Uri("https://chatgpt.com/login/callback", UriKind.Absolute),
+                new Uri("https://chatgpt.com/oauth/authorized", UriKind.Absolute),
+            },
+            PostLogoutRedirectUris =
+            {
+                new Uri("https://chatgpt.com", UriKind.Absolute),
+            },
+            Permissions =
+            {
+                Permissions.Endpoints.Authorization,
+                Permissions.Endpoints.Token,
+                Permissions.GrantTypes.AuthorizationCode,
+                Permissions.GrantTypes.RefreshToken,
+                Permissions.Scopes.Email,
+                Permissions.Scopes.Profile,
+                Permissions.Prefixes.Scope + "offline_access",
+                Permissions.Prefixes.Scope + "mcp:tools",
+                Permissions.ResponseTypes.Code,
+            },
+            Requirements =
+            {
+                Requirements.Features.ProofKeyForCodeExchange,
+            },
+        });
+    }
 }
