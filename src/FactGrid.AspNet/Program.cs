@@ -5,6 +5,10 @@ using FactGrid.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using OpenIddict.Abstractions;
+using static OpenIddict.Abstractions.OpenIddictConstants;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,6 +26,9 @@ var connectionString = provider.ToLowerInvariant() switch
     var p => throw new InvalidOperationException($"Unsupported Storage:Provider '{p}'.")
 };
 
+var baseUrl = builder.Configuration.GetValue<string>("Auth:BaseUrl")
+    ?? throw new InvalidOperationException("Auth:BaseUrl not configured.");
+
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
 {
     switch (provider.ToLowerInvariant())
@@ -37,6 +44,8 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
             options.UseSqlServer(connectionString);
             break;
     }
+
+    options.UseOpenIddict();
 });
 
 if (provider.Equals("sqlserver", StringComparison.OrdinalIgnoreCase))
@@ -44,6 +53,80 @@ if (provider.Equals("sqlserver", StringComparison.OrdinalIgnoreCase))
 
 builder.Services.AddDefaultIdentity<IdentityUser>(options => options.SignIn.RequireConfirmedAccount = true)
     .AddEntityFrameworkStores<ApplicationDbContext>();
+
+builder.Services.AddOpenIddict()
+    .AddCore(options => options
+        .UseEntityFrameworkCore()
+        .UseDbContext<ApplicationDbContext>())
+    .AddServer(options =>
+    {
+        options.SetAuthorizationEndpointUris("/connect/authorize")
+               .SetTokenEndpointUris("/connect/token")
+               .SetEndSessionEndpointUris("/connect/logout");
+
+        options.AllowAuthorizationCodeFlow()
+               .RequireProofKeyForCodeExchange()
+               .AllowRefreshTokenFlow();
+
+        if (builder.Configuration.GetValue<bool>("Auth:EnablePasswordGrant"))
+            options.AllowPasswordFlow();
+
+        options.RegisterScopes(
+            Scopes.OpenId,
+            Scopes.Email,
+            Scopes.Profile,
+            Scopes.OfflineAccess,
+            "mcp:tools");
+
+        options.AddDevelopmentSigningCertificate();
+        options.AddDevelopmentEncryptionCertificate();
+
+        var aspNetCoreOptions = options.UseAspNetCore();
+
+        if (builder.Configuration.GetValue<bool>("Auth:EnablePasswordGrant"))
+            aspNetCoreOptions.DisableTransportSecurityRequirement();
+
+        aspNetCoreOptions.EnableAuthorizationEndpointPassthrough()
+                         .EnableTokenEndpointPassthrough()
+                         .EnableEndSessionEndpointPassthrough();
+    })
+    .AddValidation(options =>
+    {
+        options.UseLocalServer();
+        options.UseAspNetCore();
+    });
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultScheme = IdentityConstants.ApplicationScheme;
+    options.DefaultChallengeScheme = IdentityConstants.ApplicationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.Authority = baseUrl;
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidIssuer = baseUrl,
+        ValidAudience = baseUrl,
+        NameClaimType = "name",
+        RoleClaimType = "roles"
+    };
+})
+.AddMcp(options =>
+{
+    options.ResourceMetadata = new()
+    {
+        ResourceDocumentation = "https://github.com/khurram-uworx/FactGrid",
+        AuthorizationServers = { baseUrl },
+        ScopesSupported = { "mcp:tools" },
+    };
+})
+.AddScheme<ApiKeyAuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
+    ApiKeyAuthenticationHandler.SchemeName, null);
+
 builder.Services.AddControllersWithViews();
 
 // Phase 3 — Shared entity catalog and DI
@@ -113,6 +196,9 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
+// Seed OpenIddict clients
+await SeedOpenIddictClientsAsync(app.Services);
+
 if (app.Environment.IsDevelopment())
 {
     app.UseMigrationsEndPoint();
@@ -123,6 +209,14 @@ else
 }
 app.UseRouting();
 
+app.UseHttpsRedirection();
+
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+}
+
+app.UseAuthentication();
 app.UseAuthorization();
 
 // Clear stale entity context before each request (prevents cross-request leakage)
@@ -145,10 +239,22 @@ app.MapRazorPages()
 
 // MCP routes — global (/api/mcp) and scoped (/api/mcp/{entityName})
 app.MapMcp("/api/mcp")
-   .AllowAnonymous();
+   .RequireAuthorization(policy =>
+   {
+       policy.AddAuthenticationSchemes(
+           JwtBearerDefaults.AuthenticationScheme,
+           ApiKeyAuthenticationHandler.SchemeName);
+       policy.RequireAuthenticatedUser();
+   });
 
 app.MapMcp("/api/mcp/{entityName}")
-   .AllowAnonymous();
+   .RequireAuthorization(policy =>
+   {
+       policy.AddAuthenticationSchemes(
+           JwtBearerDefaults.AuthenticationScheme,
+           ApiKeyAuthenticationHandler.SchemeName);
+       policy.RequireAuthenticatedUser();
+   });
 
 app.Run();
 
@@ -160,4 +266,45 @@ static string EnsureSqliteCacheShared(string connString)
         builder.Cache = SqliteCacheMode.Shared;
     }
     return builder.ConnectionString;
+}
+
+static async Task SeedOpenIddictClientsAsync(IServiceProvider services)
+{
+    await using var scope = services.CreateAsyncScope();
+    var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
+
+    if (await manager.FindByClientIdAsync("factgrid-mcp") is null)
+    {
+        await manager.CreateAsync(new OpenIddictApplicationDescriptor
+        {
+            ClientId = "factgrid-mcp",
+            DisplayName = "FactGrid MCP Client (demo)",
+            ConsentType = ConsentTypes.Explicit,
+            RedirectUris =
+            {
+                new Uri("https://chatgpt.com/login/callback", UriKind.Absolute),
+                new Uri("https://chatgpt.com/oauth/authorized", UriKind.Absolute),
+            },
+            PostLogoutRedirectUris =
+            {
+                new Uri("https://chatgpt.com", UriKind.Absolute),
+            },
+            Permissions =
+            {
+                Permissions.Endpoints.Authorization,
+                Permissions.Endpoints.Token,
+                Permissions.GrantTypes.AuthorizationCode,
+                Permissions.GrantTypes.RefreshToken,
+                Permissions.Scopes.Email,
+                Permissions.Scopes.Profile,
+                Permissions.Prefixes.Scope + "offline_access",
+                Permissions.Prefixes.Scope + "mcp:tools",
+                Permissions.ResponseTypes.Code,
+            },
+            Requirements =
+            {
+                Requirements.Features.ProofKeyForCodeExchange,
+            },
+        });
+    }
 }

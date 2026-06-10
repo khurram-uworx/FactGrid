@@ -533,6 +533,7 @@ public class DataEntryToolsMcpTests
             Assert.That(req.RequestUri!.AbsolutePath, Does.EndWith("/api/ingestion/worklogs/upload"));
             Assert.That(req.Method, Is.EqualTo(HttpMethod.Post));
             Assert.That(req.Content, Is.TypeOf<MultipartFormDataContent>());
+            Assert.That(req.Headers.Contains("X-Api-Key"), Is.True);
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(
@@ -541,8 +542,10 @@ public class DataEntryToolsMcpTests
             };
         };
 
-        var prior = Environment.GetEnvironmentVariable("FACTGRID_SERVER_URL");
+        var priorUrl = Environment.GetEnvironmentVariable("FACTGRID_SERVER_URL");
+        var priorKey = Environment.GetEnvironmentVariable("FACTGRID_SERVER_APIKEY");
         Environment.SetEnvironmentVariable("FACTGRID_SERVER_URL", "http://localhost:5000");
+        Environment.SetEnvironmentVariable("FACTGRID_SERVER_APIKEY", "test-api-key");
 
         try
         {
@@ -571,7 +574,162 @@ public class DataEntryToolsMcpTests
         }
         finally
         {
-            Environment.SetEnvironmentVariable("FACTGRID_SERVER_URL", prior);
+            Environment.SetEnvironmentVariable("FACTGRID_SERVER_URL", priorUrl);
+            Environment.SetEnvironmentVariable("FACTGRID_SERVER_APIKEY", priorKey);
+        }
+    }
+
+    [Test]
+    public async Task UploadExcel_SendsApiKeyFromEnvVar()
+    {
+        string? capturedKey = null;
+        _httpFactory.Handler.SendAsyncFunc = req =>
+        {
+            capturedKey = req.Headers.TryGetValues("X-Api-Key", out var values)
+                ? values.FirstOrDefault()
+                : null;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    JsonSerializer.Serialize(new IngestionResult { Success = true, InsertedCount = 0, Errors = [] }),
+                    Encoding.UTF8, "application/json")
+            };
+        };
+
+        var priorUrl = Environment.GetEnvironmentVariable("FACTGRID_SERVER_URL");
+        var priorKey = Environment.GetEnvironmentVariable("FACTGRID_SERVER_APIKEY");
+        Environment.SetEnvironmentVariable("FACTGRID_SERVER_URL", "http://localhost:5000");
+        Environment.SetEnvironmentVariable("FACTGRID_SERVER_APIKEY", "env-var-key");
+
+        try
+        {
+            var tools = CreateTools();
+            var tempPath = Path.GetTempFileName() + ".xlsx";
+            try
+            {
+                File.WriteAllBytes(tempPath, CreateWorklogExcel(sheet =>
+                {
+                    sheet.Cell(2, 1).Value = "Alice";
+                    sheet.Cell(2, 4).Value = "6/1/2025 12:00:00 AM";
+                    sheet.Cell(2, 5).Value = "8";
+                    sheet.Cell(2, 6).Value = "Approved";
+                }).ToArray());
+
+                await tools.UploadExcelAsync("worklogs", tempPath);
+
+                Assert.That(capturedKey, Is.EqualTo("env-var-key"));
+            }
+            finally
+            {
+                if (File.Exists(tempPath)) File.Delete(tempPath);
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("FACTGRID_SERVER_URL", priorUrl);
+            Environment.SetEnvironmentVariable("FACTGRID_SERVER_APIKEY", priorKey);
+        }
+    }
+
+    [Test]
+    public async Task UploadExcel_SendsApiKeyFromParameter()
+    {
+        string? capturedKey = null;
+        _httpFactory.Handler.SendAsyncFunc = req =>
+        {
+            capturedKey = req.Headers.TryGetValues("X-Api-Key", out var values)
+                ? values.FirstOrDefault()
+                : null;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    JsonSerializer.Serialize(new IngestionResult { Success = true, InsertedCount = 0, Errors = [] }),
+                    Encoding.UTF8, "application/json")
+            };
+        };
+
+        var priorUrl = Environment.GetEnvironmentVariable("FACTGRID_SERVER_URL");
+        var priorKey = Environment.GetEnvironmentVariable("FACTGRID_SERVER_APIKEY");
+        Environment.SetEnvironmentVariable("FACTGRID_SERVER_URL", "http://localhost:5000");
+        Environment.SetEnvironmentVariable("FACTGRID_SERVER_APIKEY", "env-var-key");
+
+        try
+        {
+            var tools = CreateTools();
+            var tempPath = Path.GetTempFileName() + ".xlsx";
+            try
+            {
+                File.WriteAllBytes(tempPath, CreateWorklogExcel(sheet =>
+                {
+                    sheet.Cell(2, 1).Value = "Alice";
+                    sheet.Cell(2, 4).Value = "6/1/2025 12:00:00 AM";
+                    sheet.Cell(2, 5).Value = "8";
+                    sheet.Cell(2, 6).Value = "Approved";
+                }).ToArray());
+
+                await tools.UploadExcelAsync("worklogs", tempPath, apiKey: "explicit-key");
+
+                Assert.That(capturedKey, Is.EqualTo("explicit-key"));
+            }
+            finally
+            {
+                if (File.Exists(tempPath)) File.Delete(tempPath);
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("FACTGRID_SERVER_URL", priorUrl);
+            Environment.SetEnvironmentVariable("FACTGRID_SERVER_APIKEY", priorKey);
+        }
+    }
+
+    [Test]
+    public async Task UploadExcel_DoesNotSendApiKey_WhenNotConfigured()
+    {
+        var headerSeen = false;
+        _httpFactory.Handler.SendAsyncFunc = req =>
+        {
+            headerSeen = req.Headers.Contains("X-Api-Key");
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    JsonSerializer.Serialize(new IngestionResult { Success = true, InsertedCount = 0, Errors = [] }),
+                    Encoding.UTF8, "application/json")
+            };
+        };
+
+        var priorUrl = Environment.GetEnvironmentVariable("FACTGRID_SERVER_URL");
+        var priorKey = Environment.GetEnvironmentVariable("FACTGRID_SERVER_APIKEY");
+        Environment.SetEnvironmentVariable("FACTGRID_SERVER_URL", "http://localhost:5000");
+        Environment.SetEnvironmentVariable("FACTGRID_SERVER_APIKEY", null);
+
+        try
+        {
+            var tools = CreateTools();
+            var tempPath = Path.GetTempFileName() + ".xlsx";
+            try
+            {
+                File.WriteAllBytes(tempPath, CreateWorklogExcel(sheet =>
+                {
+                    sheet.Cell(2, 1).Value = "Alice";
+                    sheet.Cell(2, 4).Value = "6/1/2025 12:00:00 AM";
+                    sheet.Cell(2, 5).Value = "8";
+                    sheet.Cell(2, 6).Value = "Approved";
+                }).ToArray());
+
+                await tools.UploadExcelAsync("worklogs", tempPath);
+
+                Assert.That(headerSeen, Is.False);
+            }
+            finally
+            {
+                if (File.Exists(tempPath)) File.Delete(tempPath);
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("FACTGRID_SERVER_URL", priorUrl);
+            Environment.SetEnvironmentVariable("FACTGRID_SERVER_APIKEY", priorKey);
         }
     }
 

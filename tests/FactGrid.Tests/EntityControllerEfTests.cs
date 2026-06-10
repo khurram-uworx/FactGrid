@@ -1,9 +1,14 @@
 using FactGrid.AspNet.Data;
 using FactGrid.Models;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using System.Security.Claims;
+using System.Text.Encodings.Web;
 
 namespace FactGrid.Tests;
 
@@ -149,6 +154,7 @@ public class EntityPendingModelTests
         {
             var options = new DbContextOptionsBuilder<ApplicationDbContext>()
                 .UseSqlite(connection)
+                .UseOpenIddict()
                 .Options;
 
             var db = new ApplicationDbContext(options);
@@ -156,6 +162,26 @@ public class EntityPendingModelTests
 
             Assert.That(db.Database.HasPendingModelChanges(), Is.False);
         }
+    }
+}
+
+class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
+{
+    public const string SchemeName = "Test";
+
+    public TestAuthHandler(
+        IOptionsMonitor<AuthenticationSchemeOptions> options,
+        ILoggerFactory logger,
+        UrlEncoder encoder)
+        : base(options, logger, encoder) { }
+
+    protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+    {
+        var claims = new[] { new Claim(ClaimTypes.Name, "TestUser") };
+        var identity = new ClaimsIdentity(claims, SchemeName);
+        var principal = new ClaimsPrincipal(identity);
+        var ticket = new AuthenticationTicket(principal, SchemeName);
+        return Task.FromResult(AuthenticateResult.Success(ticket));
     }
 }
 
@@ -175,6 +201,8 @@ public class EntityControllerIntegrationTests
         _factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
+                builder.UseSetting("Auth:ApiKey", "test-api-key");
+
                 builder.ConfigureServices(services =>
                 {
                     var descriptorsToRemove = services
@@ -186,7 +214,20 @@ public class EntityControllerIntegrationTests
                         services.Remove(d);
 
                     services.AddDbContext<ApplicationDbContext>(options =>
-                        options.UseSqlite(_connection));
+                    {
+                        options.UseSqlite(_connection);
+                        options.UseOpenIddict();
+                    });
+
+                    services.AddAuthentication()
+                        .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                            TestAuthHandler.SchemeName, null);
+
+                    services.Configure<AuthenticationOptions>(o =>
+                    {
+                        o.DefaultAuthenticateScheme = TestAuthHandler.SchemeName;
+                        o.DefaultChallengeScheme = TestAuthHandler.SchemeName;
+                    });
                 });
             });
 

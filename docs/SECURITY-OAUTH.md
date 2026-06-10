@@ -557,77 +557,55 @@ Final `Program.cs` structure (summary):
 
 **`tests/FactGrid.Tests/IngestionControllerTests.cs`**
 
-Acquire a test token from the OpenIddict server at startup, then send it with every request:
+**Do NOT attempt password-grant or authorization code token acquisition** in integration tests — the JWT Bearer handler requires a resolvable `Authority` URL and HTTPS, both problematic in test hosts. Instead, replace the JWT Bearer scheme with a custom `TestJwtAuthHandler` that validates a sentinel token value:
 
 ```csharp
-static string _bearerToken = null!;
-static string _apiKey = "test-api-key";
-
-[OneTimeSetUp]
-public async Task OneTimeSetUp()
+// Nested class inside the test fixture
+class TestJwtAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
-    // ... existing SQLite + factory setup ...
+    public const string TestToken = "valid-test-token";
 
-    // Seed an OpenIddict client and acquire a token for test requests
-    using var scope = _factory.Services.CreateScope();
-    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    db.Database.EnsureCreated();
-
-    var manager = scope.ServiceProvider
-        .GetRequiredService<IOpenIddictApplicationManager>();
-    await SeedTestClientAsync(manager);
-
-    _bearerToken = await AcquireTestTokenAsync(_client);
-
-    // Add auth header to the shared client
-    _client.DefaultRequestHeaders.Authorization =
-        new AuthenticationHeaderValue("Bearer", _bearerToken);
-}
-
-static async Task SeedTestClientAsync(IOpenIddictApplicationManager manager)
-{
-    if (await manager.FindByClientIdAsync("test-client") is null)
+    protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        await manager.CreateAsync(new OpenIddictApplicationDescriptor
+        var authHeader = Request.Headers.Authorization.FirstOrDefault();
+        if (authHeader is not null && authHeader == $"Bearer {TestToken}")
         {
-            ClientId = "test-client",
-            DisplayName = "Test Client",
-            RedirectUris = { new Uri("http://localhost/callback") },
-            Permissions =
-            {
-                Permissions.Endpoints.Authorization,
-                Permissions.Endpoints.Token,
-                Permissions.GrantTypes.AuthorizationCode,
-                Permissions.GrantTypes.RefreshToken,
-                Permissions.Scopes.Email,
-                Permissions.Scopes.Profile,
-                Permissions.Scopes.OfflineAccess,
-                Permissions.Prefixes.Scope + "mcp:tools",
-                Permissions.ResponseTypes.Code
-            },
-            Requirements = { Requirements.Features.ProofKeyForCodeExchange }
-        });
+            var identity = new ClaimsIdentity(Scheme.Name, ClaimTypes.Name, ClaimTypes.Role);
+            identity.AddClaim(new Claim(ClaimTypes.Name, "test-user"));
+            var principal = new ClaimsPrincipal(identity);
+            var ticket = new AuthenticationTicket(principal, Scheme.Name);
+            return Task.FromResult(AuthenticateResult.Success(ticket));
+        }
+        return Task.FromResult(AuthenticateResult.NoResult());
     }
-}
-
-static async Task<string> AcquireTestTokenAsync(HttpClient client)
-{
-    // Use the password grant or a direct token endpoint call.
-    // For integration tests, the simplest approach is to create a
-    // test endpoint or use the OpenIddict token endpoint directly.
-    // See OpenIddict test samples for reference.
 }
 ```
 
-New and updated tests:
+Register in the test factory's `ConfigureServices` — due to .NET 10 API changes, `AddScheme` throws on duplicate scheme names. Instead, swap the `HandlerType` on the existing Bearer scheme builder:
+```csharp
+builder.ConfigureServices(services =>
+{
+    // ... existing setup ...
+    services.Configure<AuthenticationOptions>(o =>
+    {
+        foreach (var scheme in o.Schemes)
+            if (scheme.Name == JwtBearerDefaults.AuthenticationScheme)
+                scheme.HandlerType = typeof(TestJwtAuthHandler);
+    });
+});
+```
+
+The test handler returns `Success` for `"valid-test-token"` and `NoResult()` for anything else (falls through to ApiKey scheme). This allows testing both JWT and API key auth paths deterministically.
+
+Key tests:
 
 | Test | Approach |
 |------|----------|
-| `Upload_WithoutAuth_Returns401` | Remove `Authorization` header from `_client.DefaultRequestHeaders` before test, restore after |
-| `Upload_WithValidJwt_Returns200` | Already covered by existing tests (client has bearer token) |
-| `Upload_WithApiKey_Returns200` | Send `X-Api-Key: {_apiKey}` header instead of `Authorization` |
-| `Upload_WithExpiredToken_Returns401` | Manually craft an expired JWT and send it |
-| Existing tests | Update `_client` to include auth header via `DefaultRequestHeaders` (or per-request) |
+| `Upload_WithoutAuth_Returns401` | Client has no auth headers → framework challenges with 401 |
+| `Upload_WithValidJwt_Returns200` | Send `Bearer valid-test-token` → TestJwtAuthHandler returns Success |
+| `Upload_WithApiKey_Returns200` | Send `X-Api-Key: test-api-key` → ApiKeyAuthenticationHandler validates against config |
+| `Upload_WithExpiredToken_Returns401` | Send `Bearer garbage-or-expired-token` → TestJwtAuthHandler returns NoResult → no other scheme matches → 401 |
+| Existing tests | Use API key via `_client.DefaultRequestHeaders.Add("X-Api-Key", "test-api-key")` |
 
 **`tests/FactGrid.Tests/McpEndpointTests.cs`**
 - Same pattern: acquire a test token in `OneTimeSetUp`, set `_client.DefaultRequestHeaders.Authorization`

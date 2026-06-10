@@ -119,6 +119,32 @@ if (statements[0] is not Statement.Select) fail;
 - Shared `ExcelColumnMetadata.ValidateRequired()` checks `[ExcelColumn(Required = true)]` fields before row-level parsing
 - Keep machine ingestion structured and atomic; validation failures must insert no records.
 
+### OpenIddict OAuth (ASP.NET Core host)
+
+- **OpenIddict 7.x+** does NOT require implementing `IOpenIddictDbContext` or declaring `DbSet<>` properties for OpenIddict entities. All entity registration is handled by `options.UseOpenIddict()` on the `DbContextOptionsBuilder` — this is called once in `Program.cs`.
+- Server config (`AddServer`): call `UseAspNetCore()` with `EnableAuthorizationEndpointPassthrough()`, `EnableTokenEndpointPassthrough()`, `EnableEndSessionEndpointPassthrough()`.
+- Validation config (`AddValidation`): call `UseLocalServer()` + `UseAspNetCore()`.
+- Use `Scopes.OpenId` / `Scopes.Email` / `Scopes.Profile` / `Scopes.OfflineAccess` constants from `OpenIddictConstants` (import `using static OpenIddict.Abstractions.OpenIddictConstants`) rather than string literals.
+- Client seed: use `IOpenIddictApplicationManager.CreateAsync(new OpenIddictApplicationDescriptor { ... })` with `ConsentTypes.Explicit`, `Permissions.Endpoints.*`, `Permissions.GrantTypes.*`, `Permissions.Scopes.*`, `Permissions.Prefixes.Scope + "custom_scope"`, and `Requirements.Features.ProofKeyForCodeExchange`.
+- `ConfigureTestServices()` is NOT available on `IWebHostBuilder` in this .NET 10 / Microsoft.AspNetCore.Mvc.Testing 10.0.8 setup. Use `ConfigureServices` with `services.Configure<AuthenticationOptions>(o => { ... })` to override defaults in integration tests instead.
+- NuGet packages needed: `OpenIddict`, `OpenIddict.EntityFrameworkCore`, `OpenIddict.AspNetCore`, `Microsoft.AspNetCore.Authentication.JwtBearer`.
+
+### Auth Testing (Integration Tests)
+
+- **Do NOT attempt password-grant token acquisition** in integration tests against a real OpenIddict server. The JWT Bearer handler requires a resolvable `Authority` URL and HTTPS — both problematic in test hosts.
+- **Use a `TestJwtAuthHandler` instead.** Replace the JWT Bearer handler type with a test handler in the test's `ConfigureServices` callback. Due to .NET 10 API changes, `AuthenticationOptions.Schemes` is `IEnumerable<AuthenticationSchemeBuilder>` (not a list). Do NOT call `services.AddAuthentication().AddScheme("Bearer", ...)` — the "Bearer" scheme is already registered by `AddJwtBearer()` in `Program.cs`, and `AddScheme` throws on duplicate. Instead, swap the `HandlerType` on the existing builder:
+  ```csharp
+  services.Configure<AuthenticationOptions>(o =>
+  {
+      foreach (var scheme in o.Schemes)
+          if (scheme.Name == JwtBearerDefaults.AuthenticationScheme)
+              scheme.HandlerType = typeof(TestJwtAuthHandler);
+  });
+  ```
+- The test handler checks for a sentinel token value (`"valid-test-token"`) and returns `AuthenticateResult.Success` with test claims. Requests with any other value get `NoResult()`, correctly falling through to the next scheme (e.g., API key).
+- The API key scheme (`X-Api-Key` header) IS tested against real config (`Auth:ApiKey`) and works in tests with `builder.UseSetting("Auth:ApiKey", "test-api-key")`.
+- Reference: `IngestionControllerTests.TestJwtAuthHandler` and the `Upload_WithValidJwt_Returns200` / `Upload_WithExpiredToken_Returns401` tests.
+
 ### Multi-Provider DB
 
 - Keep provider selection centralized in the ASP.NET host's `Program.cs`.
@@ -141,6 +167,10 @@ if (statements[0] is not Statement.Select) fail;
 | `ClosedXML` | Excel file parsing (shared FactGrid library) |
 | `SqlParserCS` | SELECT-only SQL validation (AspNet only) |
 | `ModelContextProtocol` | MCP tool attributes (both hosts) |
+| `OpenIddict` | OAuth 2.0 / OpenID Connect server (AspNet only) |
+| `OpenIddict.EntityFrameworkCore` | OpenIddict EF Core stores (AspNet only) |
+| `OpenIddict.AspNetCore` | OpenIddict ASP.NET Core integration (AspNet only) |
+| `Microsoft.AspNetCore.Authentication.JwtBearer` | JWT Bearer token validation (AspNet only) |
 | `ModelContextProtocol.AspNetCore` | Streamable HTTP transport (AspNet only) |
 | `Microsoft.EntityFrameworkCore.Sqlite` | SQLite provider (AspNet only) |
 | `Npgsql.EntityFrameworkCore.PostgreSQL` | PostgreSQL provider (AspNet only) |
